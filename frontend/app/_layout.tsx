@@ -41,7 +41,7 @@ export default function RootLayout() {
       <SafeAreaProvider>
         <Stack screenOptions={{ headerShown: false }}>
           <Stack.Screen name="(tabs)" />
-          <Stack.Screen name="capture" options={{ presentation: "modal" }} />
+          <Stack.Screen name="quick-capture" options={{ presentation: "modal" }} />
           <Stack.Screen name="import" options={{ presentation: "modal" }} />
           <Stack.Screen name="notes" options={{ presentation: "modal" }} />
           <Stack.Screen name="search" options={{ presentation: "modal" }} />

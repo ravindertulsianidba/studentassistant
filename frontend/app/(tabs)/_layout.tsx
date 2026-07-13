@@ -12,7 +12,7 @@ function CaptureButton() {
         testID="capture-fab"
         onPress={() => {
           Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-          router.push("/capture");
+          router.push("/quick-capture");
         }}
         style={({ pressed }) => [styles.fab, pressed && { transform: [{ scale: 0.95 }] }]}
       >
