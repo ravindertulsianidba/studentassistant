@@ -1,0 +1,162 @@
+{
+  "app_name": "Student Assistant",
+  "personality": "1 iOS-Native Clean",
+  "personality_one_liner": "A calm, intelligent, and highly legible academic executive assistant that reduces cognitive load.",
+  "color": {
+    "surface": "#FBFBF9",
+    "onSurface": "#181C1A",
+    "surfaceSecondary": "#FFFFFF",
+    "onSurfaceSecondary": "#4A544D",
+    "surfaceTertiary": "#F2F4F2",
+    "onSurfaceTertiary": "#616B64",
+    "surfaceInverse": "#181C1A",
+    "onSurfaceInverse": "#E6EAE7",
+    "brand": "#4F6B58",
+    "brandPrimary": "#4F6B58",
+    "onBrandPrimary": "#FFFFFF",
+    "brandSecondary": "#D8E2DA",
+    "onBrandSecondary": "#181C1A",
+    "brandTertiary": "#E8EFEA",
+    "onBrandTertiary": "#2E4034",
+    "success": "#3C6146",
+    "onSuccess": "#FFFFFF",
+    "warning": "#876426",
+    "onWarning": "#FFFFFF",
+    "error": "#8B3E3E",
+    "onError": "#FFFFFF",
+    "info": "#4F6B58",
+    "onInfo": "#FFFFFF",
+    "border": "#E1E6E2",
+    "borderStrong": "#B8C4BC",
+    "divider": "#E1E6E2"
+  },
+  "typography": {
+    "displayFontFamily": "SpaceGrotesk",
+    "textFontFamily": "Satoshi",
+    "scale": {
+      "sm": 12,
+      "base": 14,
+      "lg": 16,
+      "xl": 20,
+      "2xl": 24
+    }
+  },
+  "spacing": {
+    "rule": "Generous vertical breathing room. Cards never flush to screen edge; always use md or lg margin. Content padding should feel spacious.",
+    "xs": 4,
+    "sm": 8,
+    "md": 12,
+    "lg": 16,
+    "xl": 24,
+    "2xl": 32,
+    "3xl": 48
+  },
+  "radius_tokens": {
+    "sm": 6,
+    "md": 12,
+    "lg": 20,
+    "pill": 999
+  },
+  "shadow_tier": "1",
+  "navigation": "bottom_tabs",
+  "icon_set": "Phosphor",
+  "glassmorphism": {
+    "enabled": "true",
+    "do's": [
+      "Use for sticky headers over scrolling content",
+      "Use for the bottom tab bar when content scrolls behind it",
+      "Use for the primary 'Capture' floating action button backdrop",
+      "Use on bottom-sheet headers and modal scrims"
+    ],
+    "dont's": [
+      "Never apply to body content, list rows, or standard cards",
+      "Do not use if it impacts text readability"
+    ]
+  },
+  "platform_libraries": {
+    "glass": {
+      "ios": "expo-blur",
+      "android": "expo-blur",
+      "low_end_android_fallback": "solid surfaceSecondary"
+    },
+    "image": "expo-image",
+    "blur": "expo-blur",
+    "bottom_sheet": "@gorhom/bottom-sheet",
+    "animation": "react-native-reanimated",
+    "gesture": "react-native-gesture-handler"
+  },
+  "screens": [
+    {
+      "name": "Daily Briefing (Home)",
+      "purpose": "A calm, single-screen dashboard summarizing today's classes, deadlines, tasks, and risk alerts.",
+      "states": {
+        "loading": "Centered minimalist spinner with 'Preparing your briefing...'",
+        "empty": "Clean desk illustration with 'Your schedule is clear today.'",
+        "error": "Readable message with a Retry button."
+      },
+      "layout": "1. Hero header: High-level greeting and date (Space Grotesk) with a subtle botanical/nature image backdrop and gradient scrim.\n2. KPI Cards: 2-column grid of today's workload (e.g., 3 Classes, 2 Tasks) sitting on surfaceSecondary.\n3. Section: 'Next Up' (urgent tasks or next class), single column cards.\n4. Bottom Tabs: Home, Timeline, Tasks, Profile.\n5. Floating Action Button (FAB): Centered, raised button for 'Capture'."
+    },
+    {
+      "name": "Capture (Modal/Bottom Sheet)",
+      "purpose": "Frictionless AI Commitment Capture via voice or text input.",
+      "states": {
+        "loading": "Pulsing audio visualizer or 'Analyzing intent...'",
+        "empty": "Prompt: 'What's on your mind? I'll organize it.'",
+        "error": "Readable error message with a 'Try again' button."
+      },
+      "layout": "1. Rises as a bottom sheet over the current context.\n2. Large text area for natural language input.\n3. Prominent microphone icon button for voice.\n4. Real-time transcript preview.\n5. Confirmation cards that appear after intent is parsed (e.g., 'Task detected: Read Chapter 4')."
+    },
+    {
+      "name": "Life Timeline",
+      "purpose": "Chronological academic memory filterable by course, date, or type.",
+      "states": {
+        "loading": "Skeleton loader of timeline nodes.",
+        "empty": "Clean desk image with 'Your academic memory is ready to be written.'",
+        "error": "Readable message with a Retry button."
+      },
+      "layout": "1. Sticky date/month headers.\n2. Left-aligned vertical line with chronological nodes.\n3. Right-side cards containing recorded events, lecture notes, or captured tasks.\n4. Top scrollable filter chips (e.g., 'All', 'Lectures', 'Tasks')."
+    },
+    {
+      "name": "Review Queue",
+      "purpose": "A dedicated space to approve, edit, or ignore uncertain AI-generated items.",
+      "states": {
+        "loading": "Spinner.",
+        "empty": "Aesthetic clean desk image with 'All caught up. No items to review.'",
+        "error": "Readable message with a Retry button."
+      },
+      "layout": "1. Stacked list of items needing attention.\n2. Swipeable list rows (Swipe left to Ignore, Swipe right to Approve).\n3. Each row shows the AI's parsed intent and confidence score."
+    }
+  ],
+  "images": {
+    "hero_backdrop": {
+      "url": "https://images.unsplash.com/flagged/photo-1556742525-64ce8d772570?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NTN8MHwxfHNlYXJjaHwxfHxjYWxtJTIwbmF0dXJlJTIwbWluaW1hbCUyMGxlYWZ8ZW58MHx8fGdyZWVufDE3ODM5NTIwNTR8MA&ixlib=rb-4.1.0&q=85",
+      "dark": "https://images.unsplash.com/photo-1496769336828-c522a3a7e33c?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NTN8MHwxfHNlYXJjaHwyfHxjYWxtJTIwbmF0dXJlJTIwbWluaW1hbCUyMGxlYWZ8ZW58MHx8fGdyZWVufDE3ODM5NTIwNTR8MA&ixlib=rb-4.1.0&q=85",
+      "alt": "Calm minimal green leaf nature backdrop"
+    },
+    "empty_desk_illustration": {
+      "url": "https://images.unsplash.com/photo-1589362281138-e3f7ebe47f1a?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDQ2MzR8MHwxfHNlYXJjaHwxfHxlbXB0eSUyMGNsZWFuJTIwZGVzayUyMG1pbmltYWx8ZW58MHx8fHdoaXRlfDE3ODM5NTIwNTR8MA&ixlib=rb-4.1.0&q=85",
+      "alt": "Clean minimal desk empty state"
+    }
+  },
+  "haptics": {
+    "events": {
+      "tab_press": "light",
+      "capture_button_press": "medium",
+      "swipe_approve": "success",
+      "swipe_ignore": "light",
+      "voice_start": "medium",
+      "voice_stop": "medium"
+    }
+  },
+  "instructions_to_main_agent": [
+    "Strictly follow the '1 iOS-Native Clean' personality guidelines. The interface must feel restorative, calm, and intelligent.",
+    "Do not use indigo, violet, or blue anywhere in the app. The primary brand color is a muted sage green.",
+    "Ensure 'SpaceGrotesk' is used for numbers, metrics, and short titles to give an analytical/executive feel, while 'Satoshi' is used for body text to maintain high readability.",
+    "Implement the 'Capture' flow as a fast, frictionless bottom sheet accessible from a central FAB on the main screens.",
+    "Any text overlaid on the hero image must have a gradient scrim (top-to-bottom, ending at >70% surfaceInverse) to guarantee WCAG contrast.",
+    "Use Phosphor icons consistently with one style (e.g., filled or regular) per screen.",
+    "Ensure generous padding around content. Avoid dense dashboard-style layouts; let the typography and whitespace carry the visual hierarchy.",
+    "For the Timeline, use a clear visual left-border line with nodes to connect items chronologically.",
+    "Include Android specific optimizations, particularly ensuring that glassmorphism degrades gracefully to solid 'surfaceSecondary' on low-end devices."
+  ]
+}
