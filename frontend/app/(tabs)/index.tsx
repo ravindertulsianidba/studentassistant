@@ -1,0 +1,175 @@
+import { useState, useCallback } from "react";
+import { View, Text, StyleSheet, ScrollView, Pressable, RefreshControl } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useFocusEffect, useRouter } from "expo-router";
+import { Image } from "expo-image";
+import { LinearGradient } from "expo-linear-gradient";
+import { Feather } from "@expo/vector-icons";
+import { C, S, R, F, HERO } from "@/src/theme";
+import { api } from "@/src/api";
+import { Card, SectionTitle, Loading, Empty, Badge } from "@/src/components/ui";
+
+const RISK_TONE: any = { error: "error", warning: "warning", info: "info" };
+const ICON: any = { class: "book-open", lab: "activity", exam: "edit-3", meeting: "users", study: "book", personal: "star", assignment: "file-text" };
+
+export default function Today() {
+  const insets = useSafeAreaInsets();
+  const router = useRouter();
+  const [data, setData] = useState<any>(null);
+  const [tasks, setTasks] = useState<any[]>([]);
+  const [refreshing, setRefreshing] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(async () => {
+    try {
+      const [b, t] = await Promise.all([api.get("/briefing"), api.get("/tasks?status=open")]);
+      setData(b); setTasks(t);
+    } catch (e) {} finally { setLoading(false); setRefreshing(false); }
+  }, []);
+
+  useFocusEffect(useCallback(() => { load(); }, [load]));
+
+  const toggle = async (id: string) => {
+    setTasks((p) => p.filter((x) => x.id !== id));
+    await api.patch(`/tasks/${id}`, { status: "done" });
+    load();
+  };
+
+  const fmtDue = (s?: string) => {
+    if (!s) return "No date";
+    const d = new Date(s);
+    return d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+  };
+
+  return (
+    <View style={styles.root}>
+      <ScrollView
+        contentContainerStyle={{ paddingBottom: 120 }}
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={C.brand} />}
+      >
+        <View style={styles.hero}>
+          <Image source={{ uri: HERO }} style={StyleSheet.absoluteFill} contentFit="cover" />
+          <LinearGradient colors={["rgba(24,28,26,0.25)", "rgba(24,28,26,0.9)"]} style={StyleSheet.absoluteFill} />
+          <View style={[styles.heroContent, { paddingTop: insets.top + S.lg }]}>
+            <View style={styles.heroTopRow}>
+              <View style={styles.heroActions}>
+                <IconBtn icon="search" onPress={() => router.push("/search")} testID="open-search" />
+                <IconBtn icon="upload" onPress={() => router.push("/import")} testID="open-import" />
+                <IconBtn icon="file-text" onPress={() => router.push("/notes")} testID="open-notes" />
+              </View>
+            </View>
+            <Text style={styles.greeting} testID="briefing-greeting">{data?.greeting || "Welcome"}</Text>
+            <Text style={styles.date}>{data?.date || ""}</Text>
+          </View>
+        </View>
+
+        <View style={styles.body}>
+          {loading ? <Loading label="Preparing your briefing..." /> : (
+            <>
+              <View style={styles.stats}>
+                <Stat label="Classes" value={data?.stats?.classes ?? 0} />
+                <Stat label="Deadlines" value={data?.stats?.deadlines ?? 0} />
+                <Stat label="Tasks" value={data?.stats?.open_tasks ?? 0} />
+                <Stat label="Review" value={data?.stats?.review ?? 0} />
+              </View>
+
+              {data?.risks?.length ? (
+                <View style={{ marginTop: S.xl }}>
+                  <SectionTitle>Risk alerts</SectionTitle>
+                  <Card testID="risk-card" style={{ gap: S.md }}>
+                    {data.risks.map((r: any, i: number) => (
+                      <View key={i} style={styles.riskRow}>
+                        <Feather name="alert-triangle" size={16} color={r.level === "error" ? C.error : r.level === "warning" ? C.warning : C.brand} />
+                        <Text style={styles.riskTxt}>{r.text}</Text>
+                      </View>
+                    ))}
+                  </Card>
+                </View>
+              ) : null}
+
+              <View style={{ marginTop: S.xl }}>
+                <SectionTitle>Today's schedule</SectionTitle>
+                {data?.today_classes?.length ? data.today_classes.map((e: any) => (
+                  <Card key={e.id} style={styles.rowCard} testID={`class-${e.id}`}>
+                    <View style={styles.iconChip}><Feather name={ICON[e.event_type] || "calendar"} size={16} color={C.onBrand3} /></View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.itemTitle}>{e.title}</Text>
+                      <Text style={styles.itemSub}>{[e.event_type, e.location, e.course].filter(Boolean).join(" · ") || "—"}</Text>
+                    </View>
+                  </Card>
+                )) : <Empty icon="sun" title="Your schedule is clear today." sub="Import your class schedule to see it here." />}
+              </View>
+
+              <View style={{ marginTop: S.xl }}>
+                <SectionTitle>Upcoming deadlines</SectionTitle>
+                {data?.deadlines?.length ? data.deadlines.map((t: any) => (
+                  <Card key={t.id} style={styles.rowCard}>
+                    <Feather name="flag" size={16} color={C.warning} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.itemTitle}>{t.title}</Text>
+                      <Text style={styles.itemSub}>{fmtDue(t.due)}{t.course ? ` · ${t.course}` : ""}</Text>
+                    </View>
+                  </Card>
+                )) : <Empty icon="check-circle" title="No deadlines this week." />}
+              </View>
+
+              <View style={{ marginTop: S.xl }}>
+                <SectionTitle>Open tasks</SectionTitle>
+                {tasks.length ? tasks.map((t: any) => (
+                  <Card key={t.id} style={styles.rowCard} testID={`task-${t.id}`}>
+                    <Pressable onPress={() => toggle(t.id)} testID={`task-toggle-${t.id}`} style={styles.checkbox} hitSlop={10} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.itemTitle}>{t.title}</Text>
+                      <Text style={styles.itemSub}>{[t.category, t.due ? fmtDue(t.due) : null, t.course].filter(Boolean).join(" · ")}</Text>
+                    </View>
+                    {t.priority === "high" ? <Badge label="High" tone="error" /> : null}
+                  </Card>
+                )) : <Empty icon="coffee" title="No open tasks." sub="Tap + to capture something." />}
+              </View>
+            </>
+          )}
+        </View>
+      </ScrollView>
+    </View>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: number }) {
+  return (
+    <View style={styles.stat} testID={`stat-${label.toLowerCase()}`}>
+      <Text style={styles.statVal}>{value}</Text>
+      <Text style={styles.statLabel}>{label}</Text>
+    </View>
+  );
+}
+function IconBtn({ icon, onPress, testID }: any) {
+  return (
+    <Pressable onPress={onPress} testID={testID} style={styles.iconBtn} hitSlop={8}>
+      <Feather name={icon} size={18} color={C.onInverse} />
+    </Pressable>
+  );
+}
+
+const styles = StyleSheet.create({
+  root: { flex: 1, backgroundColor: C.surface },
+  hero: { height: 220, justifyContent: "flex-end" },
+  heroContent: { padding: S.xl, paddingBottom: S.xl },
+  heroTopRow: { flexDirection: "row", justifyContent: "flex-end", marginBottom: S.lg },
+  heroActions: { flexDirection: "row", gap: S.sm },
+  iconBtn: { width: 40, height: 40, borderRadius: R.pill, backgroundColor: "rgba(255,255,255,0.18)", alignItems: "center", justifyContent: "center" },
+  greeting: { fontFamily: F.display, fontSize: 30, color: "#fff" },
+  date: { fontFamily: F.bodyMed, fontSize: 14, color: "rgba(255,255,255,0.85)", marginTop: 2 },
+  body: { padding: S.lg },
+  stats: { flexDirection: "row", gap: S.sm },
+  stat: { flex: 1, backgroundColor: C.surface2, borderRadius: R.md, padding: S.md, alignItems: "center", borderWidth: 1, borderColor: C.border },
+  statVal: { fontFamily: F.display, fontSize: 24, color: C.brand },
+  statLabel: { fontFamily: F.body, fontSize: 11, color: C.onSurface3, marginTop: 2 },
+  rowCard: { flexDirection: "row", alignItems: "center", gap: S.md, marginBottom: S.sm, padding: S.md },
+  iconChip: { width: 34, height: 34, borderRadius: R.sm, backgroundColor: C.brand3, alignItems: "center", justifyContent: "center" },
+  itemTitle: { fontFamily: F.bodyBold, fontSize: 15, color: C.onSurface },
+  itemSub: { fontFamily: F.body, fontSize: 12, color: C.onSurface3, marginTop: 2 },
+  riskRow: { flexDirection: "row", alignItems: "center", gap: S.sm },
+  riskTxt: { fontFamily: F.body, fontSize: 13, color: C.onSurface, flex: 1 },
+  checkbox: { width: 22, height: 22, borderRadius: 6, borderWidth: 2, borderColor: C.borderStrong },
+});

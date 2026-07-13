@@ -1,0 +1,126 @@
+import { useState } from "react";
+import { View, Text, StyleSheet, TextInput, Pressable, ScrollView, KeyboardAvoidingView, Platform } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useRouter } from "expo-router";
+import * as Haptics from "expo-haptics";
+import { Feather } from "@expo/vector-icons";
+import { C, S, R, F } from "@/src/theme";
+import { api } from "@/src/api";
+import { Btn, Loading, Badge } from "@/src/components/ui";
+
+const KIND_LABEL: any = { event: "Calendar event", task: "Task", reminder: "Reminder", followup: "Follow-up" };
+const SUGGESTIONS = [
+  "I'll finish my sociology assignment Friday",
+  "I have a lab Tuesday at 2pm in room B12",
+  "Remind me to email Professor Lee tomorrow",
+  "Call my group member about the project",
+];
+
+export default function Capture() {
+  const insets = useSafeAreaInsets();
+  const router = useRouter();
+  const [text, setText] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<any>(null);
+  const [hint, setHint] = useState(false);
+
+  const submit = async () => {
+    if (!text.trim()) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setLoading(true);
+    try { setResult(await api.post("/capture", { text })); } catch (e) {} finally { setLoading(false); }
+  };
+
+  return (
+    <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.root}>
+      <View style={[styles.header, { paddingTop: insets.top + S.sm }]}>
+        <Text style={styles.title}>Capture</Text>
+        <Pressable onPress={() => router.back()} testID="capture-close" hitSlop={10}><Feather name="x" size={24} color={C.onSurface2} /></Pressable>
+      </View>
+
+      <ScrollView contentContainerStyle={{ padding: S.lg, paddingBottom: 40 }} keyboardShouldPersistTaps="handled">
+        {!result ? (
+          <>
+            <Text style={styles.prompt}>What's on your mind? I'll organize it.</Text>
+            <View style={styles.inputWrap}>
+              <TextInput
+                testID="capture-input"
+                style={styles.input}
+                placeholder="Speak or type a commitment…"
+                placeholderTextColor={C.onSurface3}
+                multiline
+                autoFocus
+                value={text}
+                onChangeText={setText}
+              />
+              <Pressable style={styles.mic} onPress={() => setHint(true)} testID="capture-mic">
+                <Feather name="mic" size={20} color={C.onBrand} />
+              </Pressable>
+            </View>
+            {hint ? <Text style={styles.hint}>Voice dictation uses your keyboard mic — tap it, then say your commitment.</Text> : null}
+
+            <Text style={styles.tryLabel}>Try</Text>
+            {SUGGESTIONS.map((s) => (
+              <Pressable key={s} style={styles.sugg} onPress={() => setText(s)}>
+                <Feather name="corner-down-right" size={14} color={C.brand} />
+                <Text style={styles.suggTxt}>{s}</Text>
+              </Pressable>
+            ))}
+
+            {loading ? <Loading label="Analyzing intent…" /> : <Btn label="Capture" icon="zap" onPress={submit} testID="capture-submit" style={{ marginTop: S.lg }} />}
+          </>
+        ) : (
+          <>
+            <View style={styles.done}><Feather name="check-circle" size={40} color={C.success} /></View>
+            {result.committed?.length ? (
+              <>
+                <Text style={styles.resHead}>Added for you</Text>
+                {result.committed.map((c: any, i: number) => (
+                  <View key={i} style={styles.resCard} testID={`committed-${i}`}>
+                    <Badge label={c.type === "event" ? "Calendar" : "Task"} tone="success" />
+                    <Text style={styles.resTitle}>{c.title}</Text>
+                  </View>
+                ))}
+              </>
+            ) : null}
+            {result.review?.length ? (
+              <>
+                <Text style={styles.resHead}>Needs your review</Text>
+                {result.review.map((r: any, i: number) => (
+                  <View key={i} style={styles.resCard}>
+                    <Badge label={KIND_LABEL[r.item?.kind] || "Item"} tone="warning" />
+                    <Text style={styles.resTitle}>{r.item?.title}</Text>
+                  </View>
+                ))}
+              </>
+            ) : null}
+            {!result.committed?.length && !result.review?.length ? (
+              <Text style={styles.prompt}>I couldn't detect a commitment. Try rephrasing.</Text>
+            ) : null}
+            <Btn label="Capture something else" variant="soft" icon="plus" onPress={() => { setText(""); setResult(null); }} style={{ marginTop: S.lg }} />
+            {result.review?.length ? <Btn label="Open Review Queue" variant="ghost" onPress={() => { router.back(); router.push("/(tabs)/review"); }} style={{ marginTop: S.sm }} /> : null}
+            <Btn label="Done" variant="primary" onPress={() => router.back()} style={{ marginTop: S.sm }} testID="capture-done" />
+          </>
+        )}
+      </ScrollView>
+    </KeyboardAvoidingView>
+  );
+}
+
+const styles = StyleSheet.create({
+  root: { flex: 1, backgroundColor: C.surface },
+  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: S.lg, paddingBottom: S.sm },
+  title: { fontFamily: F.display, fontSize: 22, color: C.onSurface },
+  prompt: { fontFamily: F.bodyMed, fontSize: 16, color: C.onSurface2, marginBottom: S.lg, lineHeight: 22 },
+  inputWrap: { position: "relative" },
+  input: { minHeight: 120, backgroundColor: C.surface2, borderRadius: R.lg, borderWidth: 1, borderColor: C.border, padding: S.lg, paddingRight: 60, fontFamily: F.body, fontSize: 16, color: C.onSurface, textAlignVertical: "top" },
+  mic: { position: "absolute", right: S.md, bottom: S.md, width: 44, height: 44, borderRadius: 22, backgroundColor: C.brand, alignItems: "center", justifyContent: "center" },
+  hint: { fontFamily: F.body, fontSize: 12, color: C.onSurface3, marginTop: S.sm },
+  tryLabel: { fontFamily: F.bodyBold, fontSize: 13, color: C.onSurface3, marginTop: S.xl, marginBottom: S.sm },
+  sugg: { flexDirection: "row", alignItems: "center", gap: S.sm, paddingVertical: S.sm },
+  suggTxt: { fontFamily: F.body, fontSize: 14, color: C.onSurface2, flex: 1 },
+  done: { alignItems: "center", marginVertical: S.lg },
+  resHead: { fontFamily: F.bodyBold, fontSize: 14, color: C.onSurface3, marginTop: S.md, marginBottom: S.sm },
+  resCard: { backgroundColor: C.surface2, borderRadius: R.md, borderWidth: 1, borderColor: C.border, padding: S.md, marginBottom: S.sm, gap: 6 },
+  resTitle: { fontFamily: F.bodyBold, fontSize: 15, color: C.onSurface },
+});

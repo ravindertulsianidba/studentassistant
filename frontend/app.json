@@ -10,7 +10,12 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.emergent.semestersync.yal1jz"
+      "bundleIdentifier": "com.emergent.semestersync.yal1jz",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Scan your schedule and syllabus to capture deadlines",
+        "NSPhotoLibraryUsageDescription": "Import screenshots of schedules and emails",
+        "NSMicrophoneUsageDescription": "Record lectures to generate study notes"
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -18,7 +23,8 @@
         "backgroundColor": "#000000"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.emergent.semestersync.yal1jz"
+      "package": "com.emergent.semestersync.yal1jz",
+      "permissions": ["CAMERA", "RECORD_AUDIO", "READ_MEDIA_IMAGES"]
     },
     "web": {
       "bundler": "metro",
@@ -35,7 +41,8 @@
           "resizeMode": "contain",
           "backgroundColor": "#000000"
         }
-      ]
+      ],
+      "expo-audio"
     ],
     "experiments": {
       "typedRoutes": true
