@@ -53,7 +53,7 @@ Legend:
 | `AI_PROVIDER` dispatch (openai/fixture), zero-code swap | ✅ | `ai_service.py` |
 | Deterministic fixtures for pipeline testing | 🧪 | `fixtures.py` |
 | Transient-error retry (tenacity, non-fatal only) | 🧪 | quota/auth not retried |
-| **Live OpenAI extraction / transcription / notes / search quality** | 🔴 | key has **no billing** (429 insufficient_quota). See re-test checklist below |
+| **Live OpenAI extraction / transcription / notes / search quality** | 🔴 | Live test attempts: BOTH supplied keys return **HTTP 429 · insufficient_quota** (key authenticates OK — 401 NOT returned — but the OpenAI account has no quota/credits). Blocked on account billing. See re-test checklist below |
 
 ## f. Semantic search (Qdrant)
 | Item | Status | Evidence |
