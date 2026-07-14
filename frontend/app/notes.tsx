@@ -75,6 +75,8 @@ export default function Notes() {
         ) : (
           <>
             <Btn label="New study notes" icon="plus" onPress={() => setMode("create")} testID="notes-new" />
+            <View style={{ height: S.sm }} />
+            <Btn label="Record a lecture" variant="soft" icon="mic" onPress={() => router.push("/record")} testID="notes-record" />
             <View style={{ height: S.lg }} />
             <SectionTitle>Your notes</SectionTitle>
             {list.length ? list.map((n) => (

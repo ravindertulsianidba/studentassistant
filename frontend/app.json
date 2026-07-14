@@ -15,7 +15,10 @@
       "infoPlist": {
         "NSCameraUsageDescription": "Scan your schedule and syllabus to capture deadlines",
         "NSPhotoLibraryUsageDescription": "Import screenshots of schedules and emails",
-        "NSMicrophoneUsageDescription": "Record lectures to generate study notes"
+        "NSMicrophoneUsageDescription": "Record lectures to generate study notes",
+        "NSCalendarsUsageDescription": "Add your classes and deadlines to your calendar",
+        "NSCalendarsFullAccessUsageDescription": "Add your classes and deadlines to your calendar",
+        "UIBackgroundModes": ["audio"]
       }
     },
     "android": {
@@ -53,7 +56,24 @@
           "backgroundColor": "#000000"
         }
       ],
-      "expo-audio",
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Record lectures to generate study notes"
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "color": "#4F6B58"
+        }
+      ],
+      [
+        "expo-calendar",
+        {
+          "calendarPermission": "Add your classes and deadlines to your calendar"
+        }
+      ],
       "expo-web-browser"
     ],
     "experiments": {

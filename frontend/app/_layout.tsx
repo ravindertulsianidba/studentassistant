@@ -8,6 +8,7 @@ import { useFonts } from "expo-font";
 
 import { useIconFonts } from "@/src/hooks/use-icon-fonts";
 import { AuthProvider, useAuth } from "@/src/auth";
+import { wireHandlers, syncAndSchedule } from "@/src/services/notifications";
 
 // Disable logbox errors etc so that users can see the app
 // and agent works as expected.
@@ -23,6 +24,14 @@ function RootNav() {
   const { ready, user } = useAuth();
   const segments = useSegments();
   const router = useRouter();
+
+  useEffect(() => { wireHandlers(); }, []);
+
+  // On sign-in (and every cold start with a session) rebuild the local
+  // notification schedule from the server — this restores reminders after reboot.
+  useEffect(() => {
+    if (user) { syncAndSchedule().catch(() => {}); }
+  }, [user]);
 
   useEffect(() => {
     if (!ready) return;
@@ -40,6 +49,7 @@ function RootNav() {
       <Stack.Screen name="(tabs)" />
       <Stack.Screen name="quick-capture" options={{ presentation: "modal" }} />
       <Stack.Screen name="notes" options={{ presentation: "modal" }} />
+      <Stack.Screen name="record" options={{ presentation: "modal" }} />
       <Stack.Screen name="search" options={{ presentation: "modal" }} />
       <Stack.Screen name="inbox" options={{ presentation: "modal" }} />
       <Stack.Screen name="course/[name]" options={{ presentation: "modal" }} />

@@ -1,0 +1,44 @@
+{
+  "summary": "Phase-2 reliability layer backend tests: 13/13 PASS on AI_PROVIDER=fixture. All 9 requested feature blocks verified end-to-end via public URL: (1) commitment state machine writes detected->confirmed->scheduled + reminder_created ledger entries and creates a pending reminder scheduled before event start; (2) ambiguous capture routes to /review with a commitment_id, approve transitions to scheduled, ignore transitions to dismissed; (3) POST /api/capture with Idempotency-Key returns byte-identical cached response on replay, creates no duplicate commitments, and increments ai-usage exactly once for two identical-key calls; (4) PUT /api/prefs {daily_ai_limit:1} allows one AI call then returns HTTP 429 with 'daily limit' message on the second; GET /api/ai-usage returns {used,limit,remaining,unlimited}; reset to 150 works; (5) POST /api/reminders/{id}/status handles delivered (sets delivered_at + external_id), failed (retry_count 1->2->3, status pending until reaching max_retries=3 where it becomes failed), and snoozed (status flips to scheduled, remind_at rewritten to snooze_until); GET /api/reminders/sync returns pending + the 3 routines (daily_briefing, evening_review, weekly_review) + quiet_hours + server_time; GET /api/reminders/health returns counts by 7 statuses; (6) chunked upload init -> chunk(0) -> /complete returns 409, re-sending chunk 0 keeps received_count stable at 1 (idempotent), chunk(1) -> /complete returns {transcript_id,text,bytes:24}; (7) POST /api/events + GET /api/calendar/pending -> present, POST /api/calendar/sync {mappings} -> {ok:true,synced:1} and pending drops it, POST /api/calendar/unlink/{eid} -> reappears in pending; (8) POST /api/search {query:'lab'} returns {answer, citations[], mode:'keyword'} grounded in user's own chunks; (9) cross-user: user A's commitment/ledger/reminder/event ids are fully disjoint from user B's. Fixture AI provider was used as instructed — extraction quality not judged, only pipeline correctness.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/search", "issue": "Consumes AI cap even when the fallback 'no materials to verify' response is returned (enforce_ai runs before the empty-chunks short-circuit). Not a bug per spec (the AI provider IS still invoked for complete_text when top!=[]) but for a user with no ingested data every /search burns 1 of daily_ai_limit — consider skipping enforce_ai when top==[] to be user-friendly."},
+    {"endpoint": "POST /api/uploads/{id}/complete", "issue": "Successful path deletes upload_chunks and marks upload status=done, but a client that retries /complete after a 200 will get 404 (upload_chunks empty AND status!=open). Consider returning the previous {transcript_id,text,bytes} idempotently, since /complete itself has no idempotency key wrapper."},
+      {"endpoint": "In-memory rate limiter (rate_limit)", "issue": "Still per-process dict keyed on client host. Behind multi-pod ingress the effective limit is N x limit. Fine for preview; note for prod scaling. (Carried from iteration_3.)"}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_phase2_reliability.py",
+    "/app/test_reports/pytest/phase2_results.xml"
+  ],
+  "action_items": [
+    "Optional: skip enforce_ai in /api/search when no user chunks match, so users with an empty corpus don't consume their daily AI cap on a canned 'nothing to verify' response.",
+    "Optional: make /api/uploads/{id}/complete idempotent (store transcript_id on the upload row and return it on repeat calls) rather than 404 after the chunk rows are deleted.",
+    "Optional (already flagged): swap in-memory rate limiter for a Redis/shared implementation before horizontal scale-out.",
+    "When a funded OpenAI key is available, flip AI_PROVIDER=openai and re-run the extraction-accuracy suite — fixture mode only proves the pipeline shape, not model quality."
+  ],
+  "critical_code_review_comments": [
+    "server.py is now 1108 lines and orchestrates auth, capture, tasks, events, briefing, imports, notes, search, reliability, reminders, calendar and uploads. Strongly recommend splitting into routers (auth, capture, tasks, events, reliability, reminders, calendar, uploads, ai_router) — the >700 LOC threshold has been crossed twice over.",
+    "reliability.transition() raises HTTPException(404) from a pure data-layer module. That works with FastAPI but blurs the 'no HTTP here' contract stated in its own docstring — either move the raise to the router (returning a domain-specific InvalidTransition/NotFound) or accept and document the coupling.",
+    "reliability.enforce_ai_cap increments first and rolls back on overflow. Under a race, two concurrent requests can both increment to (limit+1) and each roll back, but net count stays truthful. Acceptable, but worth noting that the transient reading via GET /api/ai-usage during heavy concurrency may briefly show 'used > limit'.",
+    "In server.py find_related() falls back to token_overlap>=0.6 with title text as the match key — that risks false 'possible_match' warnings for common short titles like 'Lab' or 'Email prof'. Consider requiring course match OR overlap threshold >= 0.75 when entity is <3 tokens.",
+    "reminders/sync returns ALL reminders whose status is in {pending,scheduled,snoozed} regardless of remind_at date — devices restoring after months of inactivity could schedule stale/past reminders. Consider filtering remind_at >= now-24h in the sync response, or letting the device decide but including a server_time hint (already present).",
+    "JWT_SECRET is still the 'dev-only-change-me-...' placeholder in backend/.env. config.validate() only checks length so this passes. Add a substring check for known dev placeholders when ALLOW_INSECURE_DEV=false (carried from iteration_3)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_phase2_reliability.py (new)"
+  ],
+  "success_rate": {"backend": "100% (13/13 phase-2 tests)", "frontend": "N/A (backend-only per request)"},
+  "seed_data_creation": "Each test class logs in with a unique dev email prefixed TEST_phase2_<uuid8>@uni.edu (and idem-*/cap-* keys). No shared data. Users A & B in module-scope fixtures created once per module and used for isolation assertions. All data is user-scoped and disposable via DELETE /api/me.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Public base URL: https://semester-sync-7.preview.emergentagent.com. AI_PROVIDER=fixture (deterministic — do NOT assert model quality). Use POST /api/auth/dev-login {email:'anything@uni.edu'} for tokens (ALLOW_INSECURE_DEV=true). Existing suites: /app/backend/tests/backend_test.py (v1 CRUD/AI), /app/backend/tests/test_v2_features.py, /app/backend/tests/test_v3_hardening.py, /app/backend/tests/test_phase2_reliability.py (new). Reports in /app/test_reports/. To re-run phase-2 only: `pytest backend/tests/test_phase2_reliability.py -v`. Full suite runs in ~7s from cold. Fixture provider recognizes weekday+time patterns, 'maybe/sometime/soon/later' -> ambiguous review path.",
+  "rca_of_issue": "No open issues. All 9 requested feature blocks green on first run. Idempotency correctly gates before enforce_ai so replays don't double-count. Reminder retry math: retry_count is incremented THEN compared to max_retries — count==3 triggers final 'failed' state as expected."
+}

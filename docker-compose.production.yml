@@ -17,13 +17,29 @@ services:
         limits:
           memory: 1.5g
 
+  qdrant:
+    image: qdrant/qdrant:v1.12.4
+    restart: unless-stopped
+    volumes:
+      - qdrant_data:/qdrant/storage
+    expose:
+      - "6333"
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+
   backend:
     build: ./backend
     restart: unless-stopped
     env_file: ./backend/.env
+    environment:
+      - QDRANT_URL=http://qdrant:6333
     depends_on:
       mongo:
         condition: service_healthy
+      qdrant:
+        condition: service_started
     expose:
       - "8001"
     healthcheck:
@@ -52,3 +68,4 @@ services:
 volumes:
   mongo_data:
   nginx_logs:
+  qdrant_data:

@@ -6,7 +6,7 @@ from collections import defaultdict
 from datetime import datetime, timezone, timedelta
 from typing import List, Optional, Any, Dict
 
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request, UploadFile, File, Form
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request, UploadFile, File, Form, Header
 from fastapi.responses import JSONResponse
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -15,6 +15,8 @@ from pydantic import BaseModel
 import config
 import ai_service
 import auth
+import reliability as rel
+import vectorstore as vs
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("student-assistant")
@@ -87,10 +89,37 @@ async def add_chunks(uid, source_type, source_id, label, course, text):
     text = text.strip()
     parts = [text[i:i + 800] for i in range(0, len(text), 800)] or [text]
     for idx, p in enumerate(parts):
+        cid = str(uuid.uuid4())
+        lbl = f"{label}" + (f" (part {idx+1})" if len(parts) > 1 else "")
         await db.chunks.insert_one({
-            "id": str(uuid.uuid4()), "user_id": uid, "source_type": source_type,
-            "source_id": source_id, "source_label": f"{label}" + (f" (part {idx+1})" if len(parts) > 1 else ""),
+            "id": cid, "user_id": uid, "source_type": source_type,
+            "source_id": source_id, "source_label": lbl,
             "course": course, "text": p, "ts": now_iso()})
+        # Best-effort semantic index (only when a vector store is configured).
+        if vs.enabled():
+            try:
+                vec = await ai_service.embed(p)
+                await vs.upsert(cid, uid, vec, {"text": p, "source_label": lbl,
+                                                "source_type": source_type, "source_id": source_id})
+            except Exception as e:
+                logger.warning("Vector upsert skipped: %s", type(e).__name__)
+
+
+async def enforce_ai(uid):
+    """Per-user daily AI cap (cost protection). Call before any AI provider use."""
+    prefs = await get_prefs(uid)
+    await rel.enforce_ai_cap(db, uid, prefs)
+
+
+async def maybe_reminder(uid, ref_type, ref_id, title, when_iso):
+    dt = _parse_dt(when_iso)
+    if not dt:
+        return None
+    prefs = await get_prefs(uid)
+    lead = int(prefs.get("default_reminder_min", 60) or 60)
+    remind_at = (dt - timedelta(minutes=lead)).isoformat()
+    return await rel.create_reminder(db, uid, ref_type=ref_type, ref_id=ref_id,
+                                     title=title, remind_at=remind_at, body=f"Upcoming: {title}")
 
 def conf_label(c: float) -> str:
     return "high" if c >= 0.90 else "medium" if c >= 0.80 else "low"
@@ -99,7 +128,8 @@ async def get_prefs(uid) -> dict:
     p = await db.prefs.find_one({"user_id": uid}, {"_id": 0})
     return p or {"user_id": uid, "auto_create_tasks": True, "morning_time": "07:30",
                  "evening_time": "20:00", "weekly_day": "Sun", "weekly_time": "18:00",
-                 "default_reminder_min": 60, "quiet_start": "22:00", "quiet_end": "07:00"}
+                 "default_reminder_min": 60, "quiet_start": "22:00", "quiet_end": "07:00",
+                 "daily_ai_limit": config.DEFAULT_DAILY_AI_LIMIT}
 
 # ---------------- risk-based routing ----------------
 def is_high_risk(it: dict) -> bool:
@@ -150,10 +180,25 @@ async def find_related(uid, it: dict):
         return best, coll, False  # possible match, uncertain
     return None, coll, False
 
-async def commit_item(uid, it: dict, source="ai"):
+async def commit_item(uid, it: dict, source="ai", commitment_id=None):
     course = it.get("course")
     existing, coll, certain = await find_related(uid, it)
     entity = it.get("entity")
+
+    async def _finalize(ref_type, ref_id, title, when, linked=False):
+        # advance the commitment state machine and schedule a reminder
+        if commitment_id:
+            try:
+                await rel.transition(db, uid, commitment_id, "confirmed",
+                                     actor=("user" if source == "review" else "ai"))
+                await rel.transition(db, uid, commitment_id, "scheduled",
+                                     actor=("user" if source == "review" else "ai"),
+                                     ref_type=ref_type, ref_id=ref_id, detail=title)
+            except rel.InvalidTransition:
+                pass
+        if not linked:
+            await maybe_reminder(uid, ref_type, ref_id, title, when)
+
     if existing and certain:
         # relationship link + deadline-change audit
         new_due = it.get("datetime")
@@ -177,6 +222,7 @@ async def commit_item(uid, it: dict, source="ai"):
             await db[coll].update_one({"id": existing["id"], "user_id": uid}, {"$set": upd})
         await add_timeline(uid, coll[:-1], it.get("title", existing.get("title")),
                            "updated · linked", course, existing["id"], entity, node="user_action")
+        await _finalize(coll[:-1], existing["id"], existing.get("title", ""), new_due or old_due, linked=True)
         doc = await db[coll].find_one({"id": existing["id"], "user_id": uid}, {"_id": 0})
         return {"type": coll[:-1], "linked": True, **doc}
 
@@ -186,9 +232,10 @@ async def commit_item(uid, it: dict, source="ai"):
               "start": it.get("datetime"), "end": it.get("end_datetime"),
               "location": it.get("location"), "days": it.get("days"),
               "recurring": bool(it.get("recurring")), "notes": it.get("reason"),
-              "entity": entity, "created_at": now_iso()}
+              "entity": entity, "external_id": None, "synced_at": None, "created_at": now_iso()}
         await db.events.insert_one(dict(ev))
         await add_timeline(uid, "event", ev["title"], ev.get("event_type"), course, ev["id"], entity, node="user_action")
+        await _finalize("event", ev["id"], ev["title"], ev.get("start"))
         return {"type": "event", **clean(ev)}
     else:
         tk = {"id": str(uuid.uuid4()), "user_id": uid, "title": it.get("title", "Task"),
@@ -198,9 +245,10 @@ async def commit_item(uid, it: dict, source="ai"):
               "created_at": now_iso()}
         await db.tasks.insert_one(dict(tk))
         await add_timeline(uid, "task", tk["title"], tk["category"], course, tk["id"], entity, node="user_action")
+        await _finalize("task", tk["id"], tk["title"], tk.get("due"))
         return {"type": "task", **clean(tk)}
 
-def build_review(uid, source, raw, it, related_id=None):
+def build_review(uid, source, raw, it, related_id=None, commitment_id=None):
     conf = float(it.get("confidence", 0.6) or 0.6)
     kind = it.get("kind", "task")
     label = {"event": "calendar event", "task": "task", "reminder": "reminder", "followup": "follow-up"}.get(kind, "item")
@@ -212,26 +260,27 @@ def build_review(uid, source, raw, it, related_id=None):
              "recurring/high-risk — needs approval" if is_high_risk(it) else f"Add as {label}"
     return {"id": str(uuid.uuid4()), "user_id": uid, "source": source, "raw_text": raw,
             "item": it, "detected": f"I found a {label}: {it.get('title', '')}",
-            "suggestion": reason, "related_id": related_id, "confidence": conf,
-            "confidence_label": conf_label(conf), "status": "pending", "created_at": now_iso()}
+            "suggestion": reason, "related_id": related_id, "commitment_id": commitment_id,
+            "confidence": conf, "confidence_label": conf_label(conf),
+            "status": "pending", "created_at": now_iso()}
 
-async def route_items(uid, items, source, raw):
+async def route_items(uid, items, source, raw, idem=None):
     prefs = await get_prefs(uid)
     committed, review = [], []
     for it in items:
         existing, _, certain = await find_related(uid, it)
         if existing and not certain:
             it["possible_match"] = True
-        if it.get("event_type") == "exam" or bool(it.get("recurring")):
-            it.setdefault("_", None)
+        commitment = await rel.create_commitment(db, uid, it, source, idem=idem)
+        cid = commitment["id"]
         if route_item(it, prefs) == "commit":
-            rec = await commit_item(uid, it, source=source)
+            rec = await commit_item(uid, it, source=source, commitment_id=cid)
             rec["auto"] = True
             committed.append(rec)
             await add_timeline(uid, "capture", f"Auto-created: {it.get('title','')}",
                                "high confidence · undo available", it.get("course"), rec.get("id"))
         else:
-            rev = build_review(uid, source, raw, it, related_id=(existing or {}).get("id"))
+            rev = build_review(uid, source, raw, it, related_id=(existing or {}).get("id"), commitment_id=cid)
             await db.review.insert_one(dict(rev))
             review.append(clean(rev))
     return committed, review
@@ -325,7 +374,8 @@ async def me(uid: str = CurrentUser):
 @api.delete("/me")
 async def delete_account(uid: str = CurrentUser):
     for c in ["tasks", "events", "timeline", "review", "imports", "notes", "chunks",
-              "audit", "prefs", "source_docs", "transcripts", "refresh_tokens"]:
+              "audit", "prefs", "source_docs", "transcripts", "refresh_tokens",
+              "commitments", "ledger", "reminders", "idempotency", "ai_usage", "uploads"]:
         await db[c].delete_many({"user_id": uid})
     await db.users.delete_one({"id": uid})
     return {"ok": True, "deleted": True}
@@ -340,16 +390,23 @@ class CaptureIn(BaseModel):
     text: str
 
 @api.post("/capture")
-async def capture(inp: CaptureIn, request: Request, uid: str = CurrentUser):
+async def capture(inp: CaptureIn, request: Request, uid: str = CurrentUser,
+                  idempotency_key: Optional[str] = Header(None)):
     rate_limit(request, "ai", 60)
+    cached = await rel.idem_lookup(db, uid, idempotency_key)
+    if cached is not None:
+        return cached
+    await enforce_ai(uid)
     nowt = datetime.now(timezone.utc)
     data = await ai_service.extract_json(
         CAPTURE_SYS,
         f'Current date/time: {nowt.isoformat()} ({nowt.strftime("%A")}).\nStudent said: "{inp.text}"')
     items = data.get("items", []) if isinstance(data, dict) else []
-    committed, review = await route_items(uid, items, "voice capture", inp.text)
+    committed, review = await route_items(uid, items, "voice capture", inp.text, idem=idempotency_key)
     await add_chunks(uid, "capture", str(uuid.uuid4()), f'Capture "{inp.text[:40]}"', None, inp.text)
-    return {"committed": committed, "review": review}
+    result = {"committed": committed, "review": review}
+    await rel.idem_store(db, uid, idempotency_key, "capture", result)
+    return result
 
 # ================= TASKS =================
 class TaskIn(BaseModel):
@@ -382,6 +439,16 @@ async def update_task(tid: str, body: Dict[str, Any], uid: str = CurrentUser):
     r = await db.tasks.update_one({"id": tid, "user_id": uid}, {"$set": body})
     if r.matched_count == 0:
         raise HTTPException(status_code=404, detail="Task not found")
+    if body.get("status") == "done":
+        c = await db.commitments.find_one({"user_id": uid, "ref_id": tid, "state": "scheduled"})
+        if c:
+            try:
+                await rel.transition(db, uid, c["id"], "completed", actor="user", detail="task done")
+            except rel.InvalidTransition:
+                pass
+        await db.reminders.update_many(
+            {"user_id": uid, "ref_id": tid, "status": {"$in": ["pending", "scheduled"]}},
+            {"$set": {"status": "cancelled", "updated_at": now_iso()}})
     return await db.tasks.find_one({"id": tid, "user_id": uid}, {"_id": 0})
 
 @api.delete("/tasks/{tid}")
@@ -389,6 +456,9 @@ async def delete_task(tid: str, uid: str = CurrentUser):
     r = await db.tasks.delete_one({"id": tid, "user_id": uid})
     if r.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Task not found")
+    await db.reminders.update_many(
+        {"user_id": uid, "ref_id": tid, "status": {"$in": ["pending", "scheduled"]}},
+        {"$set": {"status": "cancelled", "updated_at": now_iso()}})
     return {"ok": True}
 
 # ================= EVENTS =================
@@ -411,9 +481,11 @@ async def get_events(uid: str = CurrentUser):
 
 @api.post("/events")
 async def create_event(inp: EventIn, uid: str = CurrentUser):
-    ev = {"id": str(uuid.uuid4()), "user_id": uid, **inp.dict(), "entity": inp.title, "created_at": now_iso()}
+    ev = {"id": str(uuid.uuid4()), "user_id": uid, **inp.dict(), "entity": inp.title,
+          "external_id": None, "synced_at": None, "created_at": now_iso()}
     await db.events.insert_one(dict(ev))
     await add_timeline(uid, "event", ev["title"], ev.get("event_type"), ev.get("course"), ev["id"], node="user_action")
+    await maybe_reminder(uid, "event", ev["id"], ev["title"], ev.get("start"))
     return clean(ev)
 
 @api.delete("/events/{eid}")
@@ -476,13 +548,19 @@ async def review_action(rid: str, body: ReviewActionIn, uid: str = CurrentUser):
     rev = await db.review.find_one({"id": rid, "user_id": uid})
     if not rev:
         raise HTTPException(status_code=404, detail="Item not found")
+    cid = rev.get("commitment_id")
     result = None
     if body.action == "approve":
         it = rev.get("item", {})
         if body.edited:
             it = {**it, **body.edited}
         it.pop("possible_match", None)
-        result = await commit_item(uid, it, source="review")
+        result = await commit_item(uid, it, source="review", commitment_id=cid)
+    elif body.action in ("ignore", "delete") and cid:
+        try:
+            await rel.transition(db, uid, cid, "dismissed", actor="user", detail=body.action)
+        except rel.InvalidTransition:
+            pass
     await db.review.update_one({"id": rid, "user_id": uid}, {"$set": {"status": body.action}})
     return {"ok": True, "committed": result}
 
@@ -502,6 +580,7 @@ class ImportIn(BaseModel):
 @api.post("/import")
 async def import_doc(inp: ImportIn, request: Request, uid: str = CurrentUser):
     rate_limit(request, "ai", 30)
+    await enforce_ai(uid)
     nowt = datetime.now(timezone.utc)
     if inp.image_base64 and len(inp.image_base64) > config.MAX_UPLOAD_MB * 1024 * 1024 * 1.4:
         raise HTTPException(status_code=413, detail=f"File too large (max {config.MAX_UPLOAD_MB} MB)")
@@ -525,8 +604,9 @@ async def import_doc(inp: ImportIn, request: Request, uid: str = CurrentUser):
         existing, _, certain = await find_related(uid, it)
         if existing and not certain:
             it["possible_match"] = True
+        commitment = await rel.create_commitment(db, uid, it, f"import:{doc_type}")
         rev = build_review(uid, f"import:{doc_type}", f"Imported from {doc_type}", it,
-                           related_id=(existing or {}).get("id"))
+                           related_id=(existing or {}).get("id"), commitment_id=commitment["id"])
         rev["source_ref"] = {"source_id": src_id, "page": it.get("page")}
         await db.review.insert_one(dict(rev))
         review.append(clean(rev))
@@ -581,6 +661,7 @@ async def import_file(request: Request, uid: str = CurrentUser, file: UploadFile
     review, ai_extracted, ai_error = [], False, None
     nowt = datetime.now(timezone.utc)
     try:
+        await enforce_ai(uid)
         data = await ai_service.extract_json(
             IMPORT_SYS,
             f"Current date: {nowt.isoformat()} ({nowt.strftime('%A')}). Classify and extract.\n\nDocument text:\n{text[:15000]}")
@@ -589,8 +670,9 @@ async def import_file(request: Request, uid: str = CurrentUser, file: UploadFile
             existing, _, certain = await find_related(uid, it)
             if existing and not certain:
                 it["possible_match"] = True
+            commitment = await rel.create_commitment(db, uid, it, f"import:{doc_type}")
             rev = build_review(uid, f"import:{doc_type}", f"Imported from {file.filename}", it,
-                               related_id=(existing or {}).get("id"))
+                               related_id=(existing or {}).get("id"), commitment_id=commitment["id"])
             rev["source_ref"] = {"source_id": src_id, "page": it.get("page")}
             await db.review.insert_one(dict(rev))
             review.append(clean(rev))
@@ -609,8 +691,10 @@ async def import_file(request: Request, uid: str = CurrentUser, file: UploadFile
 
 # ================= TRANSCRIBE + STUDY NOTES =================
 @api.post("/transcribe")
-async def transcribe_audio(uid: str = CurrentUser, file: UploadFile = File(...),
+async def transcribe_audio(request: Request, uid: str = CurrentUser, file: UploadFile = File(...),
                            course: Optional[str] = Form(None), title: Optional[str] = Form("Lecture")):
+    rate_limit(request, "ai", 30)
+    await enforce_ai(uid)
     raw = await file.read()
     if len(raw) > config.MAX_UPLOAD_MB * 1024 * 1024:
         raise HTTPException(status_code=413, detail=f"Audio too large (max {config.MAX_UPLOAD_MB} MB)")
@@ -632,6 +716,7 @@ class NotesIn(BaseModel):
 @api.post("/notes/generate")
 async def generate_notes(inp: NotesIn, request: Request, uid: str = CurrentUser):
     rate_limit(request, "ai", 30)
+    await enforce_ai(uid)
     data = await ai_service.extract_json(NOTES_SYS, f"Course: {inp.course or 'General'}\nTitle: {inp.title}\nTranscript:\n{inp.transcript[:20000]}")
     note = {"id": str(uuid.uuid4()), "user_id": uid, "title": inp.title, "course": inp.course,
             "transcript": inp.transcript, "study_notes": data, "created_at": now_iso()}
@@ -659,23 +744,37 @@ class SearchIn(BaseModel):
 @api.post("/search")
 async def search(inp: SearchIn, request: Request, uid: str = CurrentUser):
     rate_limit(request, "ai", 60)
-    terms = [w for w in normalize(inp.query).split() if len(w) > 2]
-    chunks = await db.chunks.find({"user_id": uid}, {"_id": 0}).to_list(2000)
-    scored = []
-    for c in chunks:
-        t = c.get("text", "").lower()
-        s = sum(t.count(w) for w in terms)
-        if s > 0:
-            scored.append((s, c))
-    scored.sort(key=lambda x: x[0], reverse=True)
-    top = [c for _, c in scored[:6]]
+    await enforce_ai(uid)
+    top, mode = [], "keyword"
+    # 1) Semantic retrieval via the vector store when configured.
+    if vs.enabled():
+        try:
+            vec = await ai_service.embed(inp.query)
+            hits = await vs.search(uid, vec, limit=6)
+            if hits:
+                top = [{"source_label": h.get("source_label", "source"), "text": h.get("text", "")} for h in hits]
+                mode = "semantic"
+        except Exception as e:
+            logger.warning("Semantic search fell back to keyword: %s", type(e).__name__)
+    # 2) Keyword fallback (always available, guarantees a grounded answer).
     if not top:
-        return {"answer": "I couldn't find anything in your own materials to verify that. Try capturing or importing the relevant document.", "citations": []}
+        terms = [w for w in normalize(inp.query).split() if len(w) > 2]
+        chunks = await db.chunks.find({"user_id": uid}, {"_id": 0}).to_list(2000)
+        scored = []
+        for c in chunks:
+            t = c.get("text", "").lower()
+            s = sum(t.count(w) for w in terms)
+            if s > 0:
+                scored.append((s, c))
+        scored.sort(key=lambda x: x[0], reverse=True)
+        top = [c for _, c in scored[:6]]
+    if not top:
+        return {"answer": "I couldn't find anything in your own materials to verify that. Try capturing or importing the relevant document.", "citations": [], "mode": mode}
     context = "\n\n".join(f"[Source: {c['source_label']}]\n{c['text']}" for c in top)
     sys = "You answer ONLY from the provided sources (the student's own data). Cite the exact [Source: ...] label after each fact. If the sources don't contain the answer, say you cannot verify it. Never invent facts. Respond in plain text (this is JSON-free)."
     answer = await ai_service.complete_text(sys, f"Question: {inp.query}\n\nSources:\n{context}")
     citations = [{"label": c["source_label"], "snippet": c["text"][:160]} for c in top]
-    return {"answer": answer, "citations": citations}
+    return {"answer": answer, "citations": citations, "mode": mode}
 
 # ================= BRIEFING / REVIEWS =================
 @api.get("/briefing")
@@ -775,9 +874,172 @@ async def write_prefs(body: Dict[str, Any], uid: str = CurrentUser):
 @api.get("/export")
 async def export_data(uid: str = CurrentUser):
     out = {}
-    for c in ["tasks", "events", "notes", "timeline", "review", "source_docs", "transcripts", "audit"]:
-        out[c] = await db[c].find({"user_id": uid}, {"_id": 0}).to_list(2000)
+    for c in ["tasks", "events", "notes", "timeline", "review", "source_docs", "transcripts",
+              "audit", "commitments", "ledger", "reminders"]:
+        out[c] = await db[c].find({"user_id": uid}, {"_id": 0}).to_list(5000)
+    out["exported_at"] = now_iso()
     return out
+
+# ================= RELIABILITY: commitments + ledger =================
+@api.get("/commitments")
+async def list_commitments(state: Optional[str] = None, uid: str = CurrentUser):
+    q = {"user_id": uid}
+    if state:
+        q["state"] = state
+    return await db.commitments.find(q, {"_id": 0}).sort("updated_at", -1).to_list(500)
+
+@api.get("/ledger")
+async def get_ledger(limit: int = 200, uid: str = CurrentUser):
+    limit = max(1, min(limit, 1000))
+    return await db.ledger.find({"user_id": uid}, {"_id": 0}).sort("ts", -1).to_list(limit)
+
+# ================= REMINDERS (dedicated entity) =================
+class ReminderIn(BaseModel):
+    title: str
+    remind_at: str
+    body: Optional[str] = None
+    ref_type: Optional[str] = "manual"
+    ref_id: Optional[str] = None
+
+class ReminderStatusIn(BaseModel):
+    status: str  # scheduled | delivered | failed | snoozed | done | cancelled
+    external_id: Optional[str] = None
+    snooze_until: Optional[str] = None
+    detail: Optional[str] = None
+
+@api.get("/reminders")
+async def list_reminders(status: Optional[str] = None, uid: str = CurrentUser):
+    q = {"user_id": uid}
+    if status:
+        q["status"] = status
+    return await db.reminders.find(q, {"_id": 0}).sort("remind_at", 1).to_list(1000)
+
+@api.post("/reminders")
+async def create_reminder_ep(inp: ReminderIn, uid: str = CurrentUser):
+    return await rel.create_reminder(db, uid, ref_type=inp.ref_type or "manual",
+                                     ref_id=inp.ref_id, title=inp.title, remind_at=inp.remind_at,
+                                     body=inp.body, actor="user")
+
+@api.post("/reminders/{rid}/status")
+async def reminder_status(rid: str, inp: ReminderStatusIn, uid: str = CurrentUser):
+    return await rel.set_reminder_status(db, uid, rid, inp.status, external_id=inp.external_id,
+                                         snooze_until=inp.snooze_until, detail=inp.detail)
+
+@api.patch("/reminders/{rid}")
+async def patch_reminder(rid: str, body: Dict[str, Any], uid: str = CurrentUser):
+    body.pop("id", None); body.pop("_id", None); body.pop("user_id", None)
+    body["updated_at"] = now_iso()
+    r = await db.reminders.update_one({"id": rid, "user_id": uid}, {"$set": body})
+    if r.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Reminder not found")
+    return await db.reminders.find_one({"id": rid, "user_id": uid}, {"_id": 0})
+
+@api.get("/reminders/sync")
+async def reminders_sync(uid: str = CurrentUser):
+    """The device calls this on launch/foreground (and after reboot) to (re)build
+    its local schedule: all reminders that should still fire, plus repeating routines."""
+    pending = await db.reminders.find(
+        {"user_id": uid, "status": {"$in": ["pending", "scheduled", "snoozed"]}},
+        {"_id": 0}).sort("remind_at", 1).to_list(1000)
+    prefs = await get_prefs(uid)
+    return {"reminders": pending, "routines": rel.routine_specs(prefs),
+            "quiet_hours": {"start": prefs.get("quiet_start"), "end": prefs.get("quiet_end")},
+            "server_time": now_iso()}
+
+@api.get("/reminders/health")
+async def reminders_health(uid: str = CurrentUser):
+    counts = {}
+    for st in ["pending", "scheduled", "delivered", "snoozed", "failed", "cancelled", "done"]:
+        counts[st] = await db.reminders.count_documents({"user_id": uid, "status": st})
+    return {"counts": counts, "server_time": now_iso()}
+
+# ================= NATIVE CALENDAR SYNC MAPPING =================
+class CalendarSyncIn(BaseModel):
+    # device reports the OS-calendar event id it created for each of our event ids
+    mappings: Dict[str, str]
+
+@api.get("/calendar/pending")
+async def calendar_pending(uid: str = CurrentUser):
+    """Events not yet written to the device calendar (external_id is null)."""
+    docs = await db.events.find({"user_id": uid, "external_id": None}, {"_id": 0}).to_list(500)
+    return docs
+
+@api.post("/calendar/sync")
+async def calendar_sync(inp: CalendarSyncIn, uid: str = CurrentUser):
+    synced = 0
+    for our_id, ext_id in inp.mappings.items():
+        r = await db.events.update_one(
+            {"id": our_id, "user_id": uid},
+            {"$set": {"external_id": ext_id, "synced_at": now_iso()}})
+        if r.matched_count:
+            synced += 1
+            await rel.log(db, uid, "calendar_synced", entity_type="event", entity_id=our_id,
+                          actor="device", detail=f"ext={ext_id}")
+    return {"ok": True, "synced": synced}
+
+@api.post("/calendar/unlink/{eid}")
+async def calendar_unlink(eid: str, uid: str = CurrentUser):
+    """Failure recovery: device reports the external event vanished/failed."""
+    await db.events.update_one({"id": eid, "user_id": uid},
+                               {"$set": {"external_id": None, "synced_at": None}})
+    await rel.log(db, uid, "calendar_unlinked", entity_type="event", entity_id=eid, actor="device")
+    return {"ok": True}
+
+# ================= CHUNKED / RESUMABLE AUDIO UPLOAD =================
+@api.post("/uploads/init")
+async def upload_init(uid: str = CurrentUser, body: Optional[Dict[str, Any]] = None):
+    body = body or {}
+    up = {"id": str(uuid.uuid4()), "user_id": uid, "filename": body.get("filename", "lecture.m4a"),
+          "title": body.get("title", "Lecture"), "course": body.get("course"),
+          "total_chunks": int(body.get("total_chunks", 0) or 0), "received": [],
+          "status": "open", "created_at": now_iso()}
+    await db.uploads.insert_one(dict(up))
+    return {"upload_id": up["id"]}
+
+@api.post("/uploads/{upload_id}/chunk")
+async def upload_chunk(upload_id: str, request: Request, uid: str = CurrentUser,
+                       index: int = Form(...), file: UploadFile = File(...)):
+    up = await db.uploads.find_one({"id": upload_id, "user_id": uid})
+    if not up or up.get("status") != "open":
+        raise HTTPException(status_code=404, detail="Upload session not found")
+    raw = await file.read()
+    if len(raw) > config.MAX_UPLOAD_MB * 1024 * 1024:
+        raise HTTPException(status_code=413, detail=f"Chunk too large (max {config.MAX_UPLOAD_MB} MB)")
+    await db.upload_chunks.update_one(
+        {"upload_id": upload_id, "index": index},
+        {"$set": {"upload_id": upload_id, "user_id": uid, "index": index, "data": raw}}, upsert=True)
+    if index not in up.get("received", []):
+        await db.uploads.update_one({"id": upload_id}, {"$addToSet": {"received": index}})
+    got = await db.upload_chunks.count_documents({"upload_id": upload_id})
+    return {"ok": True, "received_count": got}  # idempotent: re-uploading a chunk is safe
+
+@api.post("/uploads/{upload_id}/complete")
+async def upload_complete(upload_id: str, request: Request, uid: str = CurrentUser):
+    up = await db.uploads.find_one({"id": upload_id, "user_id": uid})
+    if not up:
+        raise HTTPException(status_code=404, detail="Upload session not found")
+    chunks = await db.upload_chunks.find({"upload_id": upload_id}).sort("index", 1).to_list(100000)
+    if not chunks:
+        raise HTTPException(status_code=422, detail="No chunks received")
+    total = up.get("total_chunks") or len(chunks)
+    if len(chunks) < total:
+        raise HTTPException(status_code=409, detail=f"Missing chunks: have {len(chunks)}/{total}. Re-send missing indices.")
+    blob = b"".join(c["data"] for c in chunks)
+    await enforce_ai(uid)
+    text = await ai_service.transcribe(blob, filename=up.get("filename", "lecture.m4a"))
+    tid = str(uuid.uuid4())
+    await db.transcripts.insert_one({"id": tid, "user_id": uid, "title": up.get("title"),
+                                     "course": up.get("course"), "text": text, "created_at": now_iso()})
+    await add_chunks(uid, "transcript", tid, f"{up.get('title')} transcript", up.get("course"), text)
+    await db.uploads.update_one({"id": upload_id}, {"$set": {"status": "done"}})
+    await db.upload_chunks.delete_many({"upload_id": upload_id})
+    return {"transcript_id": tid, "text": text, "bytes": len(blob)}
+
+# ================= AI USAGE (per-user daily cap) =================
+@api.get("/ai-usage")
+async def ai_usage(uid: str = CurrentUser):
+    prefs = await get_prefs(uid)
+    return await rel.ai_usage_status(db, uid, prefs)
 
 # ================= HEALTH =================
 @app.get("/api/health")
@@ -788,7 +1050,10 @@ async def health():
     except Exception:
         ok = False
     return {"status": "ok" if ok else "degraded", "db": ok,
-            "ai_configured": bool(config.OPENAI_API_KEY),
+            "ai_provider": config.AI_PROVIDER,
+            "ai_configured": (config.AI_PROVIDER == "fixture") or bool(config.OPENAI_API_KEY),
+            "ai_live": config.AI_PROVIDER == "openai" and bool(config.OPENAI_API_KEY),
+            "vector_search": vs.enabled(),
             "google_configured": bool(config.GOOGLE_CLIENT_ID),
             "time": now_iso()}
 
@@ -820,10 +1085,19 @@ async def startup():
         await db.users.create_index("google_sub", unique=True)
         await db.refresh_tokens.create_index("jti_hash", unique=True)
         for coll in ["tasks", "events", "timeline", "review", "notes", "chunks",
-                     "imports", "source_docs", "transcripts", "audit"]:
+                     "imports", "source_docs", "transcripts", "audit",
+                     "commitments", "ledger", "reminders", "uploads"]:
             await db[coll].create_index("user_id")
         await db.chunks.create_index([("user_id", 1), ("source_type", 1)])
-        logger.info("Indexes ready. AI=%s Google=%s", bool(config.OPENAI_API_KEY), bool(config.GOOGLE_CLIENT_ID))
+        await db.commitments.create_index([("user_id", 1), ("ref_id", 1)])
+        await db.commitments.create_index([("user_id", 1), ("state", 1)])
+        await db.reminders.create_index([("user_id", 1), ("status", 1)])
+        await db.ledger.create_index([("user_id", 1), ("ts", -1)])
+        await db.idempotency.create_index([("user_id", 1), ("key", 1)], unique=True)
+        await db.ai_usage.create_index([("user_id", 1), ("date", 1)], unique=True)
+        await db.upload_chunks.create_index([("upload_id", 1), ("index", 1)], unique=True)
+        logger.info("Indexes ready. AI_PROVIDER=%s Vector=%s Google=%s",
+                    config.AI_PROVIDER, vs.enabled(), bool(config.GOOGLE_CLIENT_ID))
     except Exception as e:
         logger.warning("Index setup issue: %s", e)
 
