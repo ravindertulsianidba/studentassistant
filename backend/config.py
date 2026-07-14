@@ -30,6 +30,8 @@ def validate() -> list[str]:
     missing = []
     if not JWT_SECRET or len(JWT_SECRET) < 16:
         missing.append("JWT_SECRET (>=16 chars)")
+    if not ALLOW_INSECURE_DEV and ("CHANGE_ME" in JWT_SECRET or JWT_SECRET.startswith("dev-only")):
+        missing.append("JWT_SECRET (placeholder not allowed when ALLOW_INSECURE_DEV=false)")
     if AI_PROVIDER == "openai" and not OPENAI_API_KEY:
         missing.append("OPENAI_API_KEY")
     if not GOOGLE_CLIENT_ID and not ALLOW_INSECURE_DEV:

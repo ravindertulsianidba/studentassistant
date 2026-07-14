@@ -386,7 +386,9 @@ async def update_task(tid: str, body: Dict[str, Any], uid: str = CurrentUser):
 
 @api.delete("/tasks/{tid}")
 async def delete_task(tid: str, uid: str = CurrentUser):
-    await db.tasks.delete_one({"id": tid, "user_id": uid})
+    r = await db.tasks.delete_one({"id": tid, "user_id": uid})
+    if r.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Task not found")
     return {"ok": True}
 
 # ================= EVENTS =================
@@ -416,7 +418,9 @@ async def create_event(inp: EventIn, uid: str = CurrentUser):
 
 @api.delete("/events/{eid}")
 async def delete_event(eid: str, uid: str = CurrentUser):
-    await db.events.delete_one({"id": eid, "user_id": uid})
+    r = await db.events.delete_one({"id": eid, "user_id": uid})
+    if r.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Event not found")
     return {"ok": True}
 
 # ================= TIMELINE / MEMORY =================

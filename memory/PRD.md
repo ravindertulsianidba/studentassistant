@@ -11,6 +11,19 @@
 - **Course workspace** (/course/[name]): schedule, assignments/tasks, study notes, filtered memory.
 - Confidence indicators surfaced throughout. Backend: 25/25 tests pass.
 
+## Implemented v3 (2026-07-14) — Production Hardening (Phase 1)
+- **Emergent runtime removed**: provider-independent `ai_service.py` (OpenAI); `emergentintegrations`/`litellm` uninstalled; no `EMERGENT_LLM_KEY` in code. Fail-fast `config.validate()`.
+- **Auth + isolation**: Google ID-token verification + own JWT (access/refresh rotation, revoke), test-only dev-login; `user_id` on ALL entities; every op scoped. **32/32 backend audit tests pass**; 2-user isolation + IDOR enforced.
+- **Security**: env CORS (no wildcard), rate limiting (429), upload size/type validation (413), sanitized 500s, hashed refresh tokens, DB indexes, account deletion + export, public delete-all removed.
+- **Product**: risk-based AI Inbox routing (exams/recurring/ambiguous/deadline-change/possible-dup → always Inbox), relationship detection + deadline audit history, source-grounded chunked search with citations, evening/weekly reviews, source documents, transcription endpoint, prefs.
+- **Frontend**: login screen + AuthContext (secure token storage, refresh, sign out, delete account); all API calls authenticated.
+- **Deployment package**: Dockerfile, docker-compose.production.yml, Nginx+TLS, deploy/update/backup/restore scripts, `.env.example`, + 10 audit/guide docs.
+- **Android metadata**: name "Student Assistant", package `com.ravindertulsiani.studentassistant`, scheme, mic/notification/calendar/foreground permissions.
+
+### Pending (credentials / device build)
+- 🔑 Live AI + real Google: need `OPENAI_API_KEY` + `GOOGLE_CLIENT_ID`.
+- 📱 Native Android (foreground recording while locked, device calendar writes, background notifications, share-sheet/PDF-DOCX pickers, APK/AAB): implemented in code/metadata, require a real build to verify. See KNOWN_LIMITATIONS.md.
+
 ## Original Problem Statement
 Build "Student Assistant", an AI Academic Executive Assistant (Android-first, Expo/React Native) for university students. Not a tutor/note app. It captures, remembers, organizes, schedules, and follows up on everything a student manages during a semester — so they never forget a class, assignment, deadline, meeting, or commitment. Must feel modern, minimal, fast, calm, intelligent, and keep the user in control.
 
