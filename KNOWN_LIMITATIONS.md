@@ -10,14 +10,15 @@ Status legend: ✅ implemented & tested here · 🔑 implemented, needs producti
 - 🔑 Live AI (capture/import/notes/search/transcribe) requires `OPENAI_API_KEY`. Returns a clean `503` when unset.
 - 🔑 Real Google Sign-In requires `GOOGLE_CLIENT_ID`. Preview uses `/auth/dev-login` (disabled in prod).
 
-## Mobile / native (require a real dev/release build — NOT verifiable in Expo Go web preview)
-- 📱 Active Listening foreground service while screen-locked + persistent notification. Recording UI/controls and the `/transcribe` pipeline exist; the always-on Android foreground service must be validated on a device build.
-- 📱 Lecture recording ≥90 min with chunked/resumable upload and interruption recovery — client capture + server transcription implemented; long-run resumable upload hardening pending device testing.
-- 📱 Device calendar read/write (recurring events to the student's selected calendar) — permissions declared; native calendar writes (`expo-calendar`) to be wired + verified on device.
-- 📱 Android local notifications (class/deadline/briefing/evening/weekly), actions, after-reboot scheduling — preferences model + times implemented; native scheduling to be wired on build.
-- 📱 Share-sheet intake (share email/text/PDF/DOCX into the app) & document picker for PDF/DOCX — `/import` accepts text/image now; PDF/DOCX text extraction (pypdf/python-docx) runs server-side; Android share intents + document picker wired at build.
-- 🟡 Transcript speaker labels & tap-to-timestamp, TXT/PDF/DOCX export of transcript — transcription returns text; timestamped/speaker-labeled output and export formats are partial.
-- 🟡 Google Tasks sync — internal tasks are source of truth; external Google Tasks sync not implemented (optional per spec).
+## Mobile / native (implemented in code — require a real dev/release build to VERIFY; not testable in Expo Go / web preview)
+See **PHASE2_STATUS.md** for the item-by-item verification matrix.
+- 📱 Active Listening: `app/record.tsx` records via `expo-audio` with `UIBackgroundModes:["audio"]` (iOS) and `FOREGROUND_SERVICE_MICROPHONE` (Android) for background/locked-screen capture. Needs device verification of the always-on foreground service.
+- 📱 Lecture upload ≥90 min: real chunked/resumable upload (`src/services/recordingUpload.ts` → `/api/uploads/init|chunk|complete`) with per-chunk retry+backoff; server refuses incomplete assembly (409) and `/complete` is idempotent. Long-run + interruption recovery to be confirmed on device.
+- 📱 Device calendar: `src/services/calendar.ts` creates a dedicated calendar, writes events (with weekly recurrence), verifies each write, and reports external ids to the server for dedupe/recovery (`/api/calendar/*`). Needs device verification.
+- 📱 Local notifications: `src/services/notifications.ts` schedules reminders + daily/weekly routines, Done/Snooze actions, and rebuilds the schedule from the server on launch (reboot restoration). Needs device verification.
+- 📱 Data export via Android share sheet: `expo-sharing` writes the `/api/export` archive to a file and opens the share sheet. Needs device verification.
+- ✅ Reliability backend for all of the above (state machine, ledger, reminders, idempotency, AI cap, chunked upload, calendar mapping) is verified here with automated tests (`backend/tests/test_phase2_reliability.py`).
+- 🔴 Live AI (capture/import/notes/transcribe/search quality) is BLOCKED: the supplied OpenAI key has no billing (429 insufficient_quota). Preview runs `AI_PROVIDER=fixture` (deterministic). Flip to `openai` + funded key and run the live-AI checklist in PHASE2_STATUS.md.
 
 ## Not implemented (by design / out of scope)
 - ⛔ LMS API integration (explicitly excluded).

@@ -1,5 +1,31 @@
 # Student Assistant — PRD
 
+## Implemented v4 (2026-07-14) — Phase 2: Native Android + Reliability
+- **Reliability core (backend, VERIFIED 13/13 tests)**: Commitment state machine
+  (detected→confirmed→scheduled→completed/dismissed), append-only user-scoped
+  **reliability ledger**, dedicated **Reminder** entity with retry (retry_count/
+  max_retries, snooze reschedules), **idempotency** (`Idempotency-Key` on capture),
+  and **per-user daily AI cap** (cost protection; admin default `DEFAULT_DAILY_AI_LIMIT`,
+  0=unlimited, in-app tunable, 429 with clear message). New endpoints: `/commitments`,
+  `/ledger`, `/reminders(/sync|/health|/{id}/status)`, `/calendar/(pending|sync|unlink)`,
+  `/uploads/(init|chunk|complete)`, `/ai-usage`.
+- **Provider-independent AI**: `AI_PROVIDER` dispatch `openai|fixture` (zero-code swap).
+  Deterministic `fixtures.py` lets the whole pipeline be tested with NO key. tenacity
+  retry on transient (not quota/auth) errors. Embeddings API added.
+- **Semantic search**: Qdrant integration (`vectorstore.py`) with automatic keyword
+  fallback (`mode` in response). `docker-compose.production.yml` ships a Qdrant service.
+- **Native (implemented in code, require APK to VERIFY — see PHASE2_STATUS.md)**:
+  `app/record.tsx` background/locked-screen recording (`expo-audio`, iOS `UIBackgroundModes`,
+  Android FG-service) → chunked/resumable upload (`recordingUpload.ts`) with retry;
+  local notifications + Done/Snooze + daily/weekly routines + reboot restoration
+  (`notifications.ts`); device calendar write + recurrence + dedupe + recovery
+  (`calendar.ts`); Settings screen wires reminders/calendar/AI-cap/export; data export
+  via Android share sheet (`expo-sharing`).
+- **Independent build**: `frontend/eas.json` (dev / preview APK / production AAB) +
+  local Gradle path documented — NOT dependent on the Emergent Publish button.
+- **BLOCKED**: live AI quality — supplied OpenAI key has no billing (429). Preview runs
+  `AI_PROVIDER=fixture`. Live-AI + device re-test checklists in PHASE2_STATUS.md.
+
 ## Implemented v2 (2026-07-14) — UX & Intelligence Refinements
 - Navigation simplified to 5 mental models: **Today, Capture (FAB), Memory, Courses, Settings**.
 - **Timeline → Memory**: global search + type filter + course filter + jump-to-source (notes/courses).

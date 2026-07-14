@@ -744,16 +744,18 @@ class SearchIn(BaseModel):
 @api.post("/search")
 async def search(inp: SearchIn, request: Request, uid: str = CurrentUser):
     rate_limit(request, "ai", 60)
-    await enforce_ai(uid)
     top, mode = [], "keyword"
     # 1) Semantic retrieval via the vector store when configured.
     if vs.enabled():
         try:
+            await enforce_ai(uid)
             vec = await ai_service.embed(inp.query)
             hits = await vs.search(uid, vec, limit=6)
             if hits:
                 top = [{"source_label": h.get("source_label", "source"), "text": h.get("text", "")} for h in hits]
                 mode = "semantic"
+        except HTTPException:
+            raise
         except Exception as e:
             logger.warning("Semantic search fell back to keyword: %s", type(e).__name__)
     # 2) Keyword fallback (always available, guarantees a grounded answer).
@@ -769,7 +771,10 @@ async def search(inp: SearchIn, request: Request, uid: str = CurrentUser):
         scored.sort(key=lambda x: x[0], reverse=True)
         top = [c for _, c in scored[:6]]
     if not top:
+        # Nothing to ground on — no AI call made, so no usage is consumed.
         return {"answer": "I couldn't find anything in your own materials to verify that. Try capturing or importing the relevant document.", "citations": [], "mode": mode}
+    if mode == "keyword":
+        await enforce_ai(uid)  # count the answer-generation call once
     context = "\n\n".join(f"[Source: {c['source_label']}]\n{c['text']}" for c in top)
     sys = "You answer ONLY from the provided sources (the student's own data). Cite the exact [Source: ...] label after each fact. If the sources don't contain the answer, say you cannot verify it. Never invent facts. Respond in plain text (this is JSON-free)."
     answer = await ai_service.complete_text(sys, f"Question: {inp.query}\n\nSources:\n{context}")
@@ -1018,6 +1023,10 @@ async def upload_complete(upload_id: str, request: Request, uid: str = CurrentUs
     up = await db.uploads.find_one({"id": upload_id, "user_id": uid})
     if not up:
         raise HTTPException(status_code=404, detail="Upload session not found")
+    # Idempotent: if already assembled+transcribed, return the stored result.
+    if up.get("status") == "done" and up.get("transcript_id"):
+        return {"transcript_id": up["transcript_id"], "text": up.get("transcript_text", ""),
+                "bytes": up.get("bytes", 0)}
     chunks = await db.upload_chunks.find({"upload_id": upload_id}).sort("index", 1).to_list(100000)
     if not chunks:
         raise HTTPException(status_code=422, detail="No chunks received")
@@ -1031,7 +1040,8 @@ async def upload_complete(upload_id: str, request: Request, uid: str = CurrentUs
     await db.transcripts.insert_one({"id": tid, "user_id": uid, "title": up.get("title"),
                                      "course": up.get("course"), "text": text, "created_at": now_iso()})
     await add_chunks(uid, "transcript", tid, f"{up.get('title')} transcript", up.get("course"), text)
-    await db.uploads.update_one({"id": upload_id}, {"$set": {"status": "done"}})
+    await db.uploads.update_one({"id": upload_id}, {"$set": {"status": "done", "transcript_id": tid,
+                                                             "transcript_text": text, "bytes": len(blob)}})
     await db.upload_chunks.delete_many({"upload_id": upload_id})
     return {"transcript_id": tid, "text": text, "bytes": len(blob)}
 
