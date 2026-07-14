@@ -67,11 +67,20 @@ current app; compared `app.routes`.
 - **Behaviour changes:** NONE intended or observed. Env handling unchanged (`config.py` reads env; `.env` untouched except `AI_PROVIDER`/key value). DB init unchanged (same indexes). Qdrant, uploads, retry, idempotency, reminders, calendar mapping, audit logs, daily AI cap all unchanged and tested.
 
 ## 6. Regression verdict
-**One regression found and fixed:** `/briefing` 500 (`NameError: defaultdict`) caused by
-a top-level import not carried into the new router module. Fixed by restoring the
-missing imports; `/briefing` now 200 and covered by tests. **No other regressions**
-(routes, schemas, auth/isolation, env, DB init, Qdrant, uploads/retry/idempotency/
-reminders/calendar/audit/AI-cap all intact; no circular imports; clean startup).
+**Independently verified by the testing subagent (report `/app/test_reports/iteration_5.json`,
+suite `backend/tests/test_refactor_regression.py`, 17/17 PASS under LIVE OpenAI):
+no regressions, no 500s, no missing routes, auth & isolation intact.**
+
+**One regression found and fixed (before verification):** `/briefing` 500
+(`NameError: defaultdict`) caused by a top-level import not carried into the new
+router module. Fixed by restoring the missing imports; `/briefing` now 200 and
+covered by tests. **No other regressions** (routes, schemas, auth/isolation, env,
+DB init, Qdrant, uploads/retry/idempotency/reminders/calendar/audit/AI-cap all
+intact; no circular imports; clean startup — `backend.err.log` shows zero
+Traceback/NameError since the fix).
+
+Total automated tests: **70** (backend_test 16 · v2 9 · v3 32 · phase2 13, fixture mode)
+**+ 17** (test_refactor_regression, live) = **87**, all passing.
 
 ## 7. Known risks
 - Legacy suites (`backend_test.py`, `test_v2_features.py`) still depend on the deterministic fixture provider for AI-shape stability; run them under `AI_PROVIDER=fixture` (their design mode). Live AI is validated separately (§3).
