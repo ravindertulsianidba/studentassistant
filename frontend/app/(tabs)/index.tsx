@@ -20,15 +20,26 @@ export default function Today() {
   const [recent, setRecent] = useState<any[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [done, setDone] = useState<any[]>([]);
+  const [showDone, setShowDone] = useState(false);
 
   const load = useCallback(async () => {
     try {
       const [b, t, m] = await Promise.all([api.get("/briefing"), api.get("/tasks?status=open"), api.get("/timeline?kind=all")]);
       setData(b); setTasks(t); setRecent(m.slice(0, 5));
+      if (showDone) setDone(await api.get("/tasks?status=done"));
     } catch (e) {} finally { setLoading(false); setRefreshing(false); }
-  }, []);
+  }, [showDone]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
+
+  const openItem = (type: "task" | "event", item: any) =>
+    router.push({ pathname: "/item-detail", params: { type, data: JSON.stringify(item) } });
+
+  const toggleDone = async () => {
+    if (showDone) { setShowDone(false); return; }
+    try { setDone(await api.get("/tasks?status=done")); setShowDone(true); } catch (e) {}
+  };
 
   const toggle = async (id: string) => {
     setTasks((p) => p.filter((x) => x.id !== id));
@@ -110,41 +121,62 @@ export default function Today() {
               <View style={{ marginTop: S.xl }}>
                 <SectionTitle>Today's schedule</SectionTitle>
                 {data?.today_classes?.length ? data.today_classes.map((e: any) => (
-                  <Card key={e.id} style={styles.rowCard} testID={`class-${e.id}`}>
-                    <View style={styles.iconChip}><Feather name={ICON[e.event_type] || "calendar"} size={16} color={C.onBrand3} /></View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.itemTitle}>{e.title}</Text>
-                      <Text style={styles.itemSub}>{[e.event_type, e.location, e.course].filter(Boolean).join(" · ") || "—"}</Text>
-                    </View>
-                  </Card>
+                  <Pressable key={e.id} onPress={() => openItem("event", e)} testID={`class-${e.id}`}>
+                    <Card style={styles.rowCard}>
+                      <View style={styles.iconChip}><Feather name={ICON[e.event_type] || "calendar"} size={16} color={C.onBrand3} /></View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.itemTitle}>{e.title}</Text>
+                        <Text style={styles.itemSub}>{[e.event_type, e.location, e.course].filter(Boolean).join(" · ") || "—"}</Text>
+                      </View>
+                      <Feather name="chevron-right" size={18} color={C.onSurface3} />
+                    </Card>
+                  </Pressable>
                 )) : <Empty icon="sun" title="Your schedule is clear today." sub="Import your class schedule to see it here." />}
               </View>
 
               <View style={{ marginTop: S.xl }}>
                 <SectionTitle>Upcoming deadlines</SectionTitle>
                 {data?.deadlines?.length ? data.deadlines.map((t: any) => (
-                  <Card key={t.id} style={styles.rowCard}>
-                    <Feather name="flag" size={16} color={C.warning} />
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.itemTitle}>{t.title}</Text>
-                      <Text style={styles.itemSub}>{fmtDue(t.due)}{t.course ? ` · ${t.course}` : ""}</Text>
-                    </View>
-                  </Card>
+                  <Pressable key={t.id} onPress={() => openItem("task", t)} testID={`deadline-${t.id}`}>
+                    <Card style={styles.rowCard}>
+                      <Feather name="flag" size={16} color={C.warning} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.itemTitle}>{t.title}</Text>
+                        <Text style={styles.itemSub}>{fmtDue(t.due)}{t.course ? ` · ${t.course}` : ""}</Text>
+                      </View>
+                      <Feather name="chevron-right" size={18} color={C.onSurface3} />
+                    </Card>
+                  </Pressable>
                 )) : <Empty icon="check-circle" title="No deadlines this week." />}
               </View>
 
               <View style={{ marginTop: S.xl }}>
-                <SectionTitle>Open tasks</SectionTitle>
+                <View style={styles.memHead}>
+                  <SectionTitle>Open tasks</SectionTitle>
+                  <Pressable onPress={toggleDone} testID="toggle-completed"><Text style={styles.seeAll}>{showDone ? "Hide completed" : "Show completed"}</Text></Pressable>
+                </View>
                 {tasks.length ? tasks.map((t: any) => (
                   <Card key={t.id} style={styles.rowCard} testID={`task-${t.id}`}>
                     <Pressable onPress={() => toggle(t.id)} testID={`task-toggle-${t.id}`} style={styles.checkbox} hitSlop={10} />
-                    <View style={{ flex: 1 }}>
+                    <Pressable style={{ flex: 1 }} onPress={() => openItem("task", t)} testID={`task-open-${t.id}`}>
                       <Text style={styles.itemTitle}>{t.title}</Text>
                       <Text style={styles.itemSub}>{[t.category, t.due ? fmtDue(t.due) : null, t.course].filter(Boolean).join(" · ")}</Text>
-                    </View>
+                    </Pressable>
                     {t.priority === "high" ? <Badge label="High" tone="error" /> : null}
+                    <Feather name="chevron-right" size={18} color={C.onSurface3} />
                   </Card>
                 )) : <Empty icon="coffee" title="No open tasks." sub="Tap + to capture something." />}
+
+                {showDone ? (done.length ? done.map((t: any) => (
+                  <Card key={t.id} style={styles.rowCard} testID={`done-${t.id}`}>
+                    <View style={styles.checkboxDone}><Feather name="check" size={13} color={C.onBrand} /></View>
+                    <Pressable style={{ flex: 1 }} onPress={() => openItem("task", t)} testID={`done-open-${t.id}`}>
+                      <Text style={[styles.itemTitle, styles.strike]}>{t.title}</Text>
+                      <Text style={styles.itemSub}>Completed · tap to reopen or edit</Text>
+                    </Pressable>
+                    <Feather name="chevron-right" size={18} color={C.onSurface3} />
+                  </Card>
+                )) : <Text style={styles.emptyDone}>No completed tasks yet.</Text>) : null}
               </View>
 
               <View style={{ marginTop: S.xl }}>
@@ -207,6 +239,9 @@ const styles = StyleSheet.create({
   riskRow: { flexDirection: "row", alignItems: "center", gap: S.sm },
   riskTxt: { fontFamily: F.body, fontSize: 13, color: C.onSurface, flex: 1 },
   checkbox: { width: 22, height: 22, borderRadius: 6, borderWidth: 2, borderColor: C.borderStrong },
+  checkboxDone: { width: 22, height: 22, borderRadius: 6, backgroundColor: C.brand, alignItems: "center", justifyContent: "center" },
+  strike: { textDecorationLine: "line-through", color: C.onSurface3 },
+  emptyDone: { fontFamily: F.body, fontSize: 13, color: C.onSurface3, paddingVertical: S.sm, paddingLeft: S.xs },
   prompt: { flexDirection: "row", alignItems: "center", gap: S.md, backgroundColor: C.surface2, borderRadius: R.lg, borderWidth: 1, borderColor: C.borderStrong, padding: S.lg },
   promptIcon: { width: 34, height: 34, borderRadius: R.pill, backgroundColor: C.brand, alignItems: "center", justifyContent: "center" },
   promptTxt: { flex: 1, fontFamily: F.bodyMed, fontSize: 15, color: C.onSurface2 },

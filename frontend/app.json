@@ -18,7 +18,9 @@
         "NSMicrophoneUsageDescription": "Record lectures to generate study notes",
         "NSCalendarsUsageDescription": "Add your classes and deadlines to your calendar",
         "NSCalendarsFullAccessUsageDescription": "Add your classes and deadlines to your calendar",
-        "UIBackgroundModes": ["audio"]
+        "UIBackgroundModes": [
+          "audio"
+        ]
       }
     },
     "android": {
@@ -74,7 +76,8 @@
           "calendarPermission": "Add your classes and deadlines to your calendar"
         }
       ],
-      "expo-web-browser"
+      "expo-web-browser",
+      "@react-native-community/datetimepicker"
     ],
     "experiments": {
       "typedRoutes": true

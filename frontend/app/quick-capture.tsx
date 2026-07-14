@@ -1,10 +1,11 @@
 import { useState } from "react";
-import { View, Text, StyleSheet, TextInput, Pressable, ScrollView, KeyboardAvoidingView, Platform } from "react-native";
+import { View, Text, StyleSheet, TextInput, Pressable, ScrollView, KeyboardAvoidingView, Platform, Alert, Linking } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import * as Haptics from "expo-haptics";
 import * as ImagePicker from "expo-image-picker";
 import * as DocumentPicker from "expo-document-picker";
+import { useAudioRecorder, AudioModule, RecordingPresets, setAudioModeAsync } from "expo-audio";
 import { Feather } from "@expo/vector-icons";
 import { C, S, R, F } from "@/src/theme";
 import { api } from "@/src/api";
@@ -24,8 +25,51 @@ export default function Capture() {
   const [text, setText] = useState("");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<any>(null);
-  const [hint, setHint] = useState(false);
+  const [recording, setRecording] = useState(false);
+  const [transcribing, setTranscribing] = useState(false);
   const [err, setErr] = useState("");
+  const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
+
+  const toggleMic = async () => {
+    setErr("");
+    if (Platform.OS === "web") { setErr("Voice recording needs the installed app."); return; }
+    if (recording) { await stopAndTranscribe(); return; }
+    const cur = await AudioModule.getRecordingPermissionsAsync();
+    let granted = cur.granted;
+    if (!granted && cur.canAskAgain) granted = (await AudioModule.requestRecordingPermissionsAsync()).granted;
+    if (!granted) {
+      Alert.alert("Microphone needed", "Allow microphone access to dictate your commitment.", [
+        { text: "Cancel", style: "cancel" },
+        { text: "Open settings", onPress: () => Linking.openSettings() },
+      ]);
+      return;
+    }
+    try {
+      await setAudioModeAsync({ playsInSilentMode: true, allowsRecording: true } as any);
+      await recorder.prepareToRecordAsync();
+      recorder.record();
+      setRecording(true);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    } catch (e: any) { setErr(e?.message || "Could not start recording."); }
+  };
+
+  const stopAndTranscribe = async () => {
+    setRecording(false);
+    setTranscribing(true);
+    try {
+      await recorder.stop();
+      const uri = recorder.uri;
+      if (!uri) throw new Error("No audio was recorded.");
+      const form = new FormData();
+      form.append("file", { uri, name: "voice.m4a", type: "audio/m4a" } as any);
+      form.append("title", "Voice capture");
+      const res = await fetch(`${api.base}/transcribe`, { method: "POST", headers: { ...api.authHeader() } as any, body: form });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "Transcription failed.");
+      setText((p) => (p ? p + " " : "") + (data.text || "").trim());
+    } catch (e: any) { setErr(e?.message || "Transcription failed. Please type instead."); }
+    finally { setTranscribing(false); }
+  };
 
   const submit = async () => {
     if (!text.trim()) return;
@@ -92,11 +136,13 @@ export default function Capture() {
                 value={text}
                 onChangeText={setText}
               />
-              <Pressable style={styles.mic} onPress={() => setHint(true)} testID="capture-mic">
-                <Feather name="mic" size={20} color={C.onBrand} />
+              <Pressable style={[styles.mic, recording && styles.micActive]} onPress={toggleMic} testID="capture-mic" disabled={transcribing}>
+                <Feather name={recording ? "square" : "mic"} size={20} color={C.onBrand} />
               </Pressable>
             </View>
-            {hint ? <Text style={styles.hint}>Voice dictation uses your keyboard mic — tap it, then say your commitment.</Text> : null}
+            {recording ? <Text style={styles.recTxt} testID="capture-listening">● Listening… tap the square to stop.</Text> : null}
+            {transcribing ? <Text style={styles.hint}>Transcribing your voice…</Text> : null}
+            {err && !result ? <Text style={styles.errTxt} testID="capture-mic-error">{err}</Text> : null}
 
             <Text style={styles.tryLabel}>Try</Text>
             {SUGGESTIONS.map((s) => (
@@ -168,6 +214,8 @@ const styles = StyleSheet.create({
   inputWrap: { position: "relative" },
   input: { minHeight: 120, backgroundColor: C.surface2, borderRadius: R.lg, borderWidth: 1, borderColor: C.border, padding: S.lg, paddingRight: 60, fontFamily: F.body, fontSize: 16, color: C.onSurface, textAlignVertical: "top" },
   mic: { position: "absolute", right: S.md, bottom: S.md, width: 44, height: 44, borderRadius: 22, backgroundColor: C.brand, alignItems: "center", justifyContent: "center" },
+  micActive: { backgroundColor: C.error },
+  recTxt: { fontFamily: F.bodyMed, fontSize: 13, color: C.error, marginTop: S.sm },
   hint: { fontFamily: F.body, fontSize: 12, color: C.onSurface3, marginTop: S.sm },
   tryLabel: { fontFamily: F.bodyBold, fontSize: 13, color: C.onSurface3, marginTop: S.xl, marginBottom: S.sm },
   sugg: { flexDirection: "row", alignItems: "center", gap: S.sm, paddingVertical: S.sm },

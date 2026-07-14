@@ -85,11 +85,29 @@ async def create_event(inp: EventIn, uid: str = CurrentUser):
     await maybe_reminder(uid, "event", ev["id"], ev["title"], ev.get("start"))
     return clean(ev)
 
+@router.patch("/events/{eid}")
+async def update_event(eid: str, body: Dict[str, Any], uid: str = CurrentUser):
+    body.pop("id", None); body.pop("_id", None); body.pop("user_id", None)
+    r = await db.events.update_one({"id": eid, "user_id": uid}, {"$set": body})
+    if r.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Event not found")
+    # if the time changed, refresh the reminder for this event
+    if "start" in body:
+        ev = await db.events.find_one({"id": eid, "user_id": uid}, {"_id": 0})
+        await db.reminders.update_many(
+            {"user_id": uid, "ref_id": eid, "status": {"$in": ["pending", "scheduled"]}},
+            {"$set": {"status": "cancelled", "updated_at": now_iso()}})
+        await maybe_reminder(uid, "event", eid, ev.get("title", "Event"), ev.get("start"))
+    return await db.events.find_one({"id": eid, "user_id": uid}, {"_id": 0})
+
 @router.delete("/events/{eid}")
 async def delete_event(eid: str, uid: str = CurrentUser):
     r = await db.events.delete_one({"id": eid, "user_id": uid})
     if r.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Event not found")
+    await db.reminders.update_many(
+        {"user_id": uid, "ref_id": eid, "status": {"$in": ["pending", "scheduled"]}},
+        {"$set": {"status": "cancelled", "updated_at": now_iso()}})
     return {"ok": True}
 
 # ================= TIMELINE / MEMORY =================

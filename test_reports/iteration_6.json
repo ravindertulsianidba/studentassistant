@@ -1,0 +1,38 @@
+{
+  "summary": "Verified all 4 device-reported bug fixes. Backend: 11/11 pytest passed (reopen, task edit, event PATCH/DELETE, regressions). Frontend web preview: end-to-end flow passed — login → Today → FAB → quick-capture → mic button (shows 'needs the installed app' on web, no crash) → capture created task → item-detail modal → edit title + tap date/time picker (no crash) → Save → verified on Today → Mark as done → Show completed → Reopen task → back in Open list. Bottom tab bar shows Today/Memory/(+)/Courses/Settings.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "DateTimePicker on web", "issue": "Console warning: 'DateTimePicker is not supported on: web'. Component gracefully no-ops so no crash, but on web the date/time picker cannot be used to change the date. On device (iOS/Android) it works as expected. Reference: frontend/app/item-detail.tsx:146-154"},
+      {"component": "props.pointerEvents deprecation", "issue": "Console warning: 'props.pointerEvents is deprecated. Use style.pointerEvents'. Reference: frontend/app/(tabs)/_layout.tsx:11 (View style={{ pointerEvents: 'box-none' }} passed as prop-like via array). Non-blocking."},
+      {"component": "shadow* style props deprecation", "issue": "Console warning: '\"shadow*\" style props are deprecated. Use \"boxShadow\".' Reference: frontend/src/theme.ts (shadow helper). Non-blocking."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_device_bug_fixes.py",
+    "/app/test_reports/pytest/device_bug_fixes.xml"
+  ],
+  "device_only_notes": [
+    "Bug #4 (Android tab-bar overlap fix): code uses useSafeAreaInsets bottom in (tabs)/_layout.tsx via `Math.max(insets.bottom, 8)` applied to tabBarStyle height+paddingBottom, and FAB is lifted by same inset. Correct implementation but overlap can only be visually confirmed on a real Android device.",
+    "Bug #3 (real microphone recording/transcription): quick-capture uses expo-audio (useAudioRecorder / AudioModule) and POSTs to /api/transcribe. On web it correctly short-circuits with 'Voice recording needs the installed app.' Actual recording+transcription requires an APK build."
+  ],
+  "action_items": [
+    "OPTIONAL: consider adding a web-friendly fallback for date/time editing (e.g., a native <input type=\"datetime-local\"> or a JS picker library) so the field can be changed in the web preview. Currently on web tapping the field shows nothing (warning-only). On device this works via @react-native-community/datetimepicker as intended.",
+    "OPTIONAL: silence deprecation warnings — migrate `pointerEvents` prop to style, and `shadow*` props to `boxShadow` (native SDK 53+ still accepts shadow* but warns)."
+  ],
+  "critical_code_review_comments": [
+    "Backend: PATCH /api/events/{id} correctly cancels prior reminders and re-schedules when 'start' changes (routers/planner.py:88-101). Good.",
+    "Backend: PATCH /api/tasks/{id} status transitions to 'done' cancel pending reminders and transition commitment to completed; reopening to 'open' works but does NOT recreate the reminder (by design — user can edit the due date via the modal to trigger a new one). Acceptable given the modal reopen flow.",
+    "Frontend: item-detail modal correctly wires status toggle, delete, save, and pickers. All required testIDs present (detail-title, detail-save, detail-toggle, detail-datetime, detail-close, detail-delete).",
+    "Frontend: Today screen exposes task-open-<id>, done-<id>, done-open-<id>, deadline-<id>, class-<id>, toggle-completed as required."
+  ],
+  "updated_files": [],
+  "success_rate": { "backend": "100% (11/11)", "frontend": "100% (all requested flows verified)" },
+  "seed_data_creation": "Test emails created via dev-login with TEST_ prefix. One task and one event created per test (self-contained; teardown not required for isolated dev users).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "AI_PROVIDER=openai (live) in backend/.env. dev-login is enabled (ALLOW_INSECURE_DEV=true). Frontend URL: EXPO_PUBLIC_BACKEND_URL in /app/frontend/.env. Test file /app/backend/tests/test_device_bug_fixes.py can be reused. DateTimePicker is warned as unsupported on web — this is expected, do not flag as a crash."
+}

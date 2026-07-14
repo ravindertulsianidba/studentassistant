@@ -50,6 +50,7 @@ function RootNav() {
       <Stack.Screen name="quick-capture" options={{ presentation: "modal" }} />
       <Stack.Screen name="notes" options={{ presentation: "modal" }} />
       <Stack.Screen name="record" options={{ presentation: "modal" }} />
+      <Stack.Screen name="item-detail" options={{ presentation: "modal" }} />
       <Stack.Screen name="search" options={{ presentation: "modal" }} />
       <Stack.Screen name="inbox" options={{ presentation: "modal" }} />
       <Stack.Screen name="course/[name]" options={{ presentation: "modal" }} />
