@@ -2,14 +2,18 @@
 Currently implements OpenAI (chat JSON, vision OCR, Whisper transcription)."""
 import io
 import json
+import logging
 from typing import Optional
 
 import config
 
+logger = logging.getLogger("student-assistant")
+
 try:
-    from openai import AsyncOpenAI
+    from openai import AsyncOpenAI, OpenAIError
 except Exception:  # pragma: no cover
     AsyncOpenAI = None
+    OpenAIError = Exception
 
 
 class AIError(Exception):
@@ -32,6 +36,18 @@ def _get_client():
     return _client
 
 
+def _friendly(e: Exception) -> str:
+    msg = str(getattr(e, "message", "") or e)
+    status = getattr(e, "status_code", None)
+    if "insufficient_quota" in msg:
+        return "AI provider quota exceeded — add billing/credits to your OpenAI account."
+    if status == 401 or "invalid_api_key" in msg:
+        return "Invalid OpenAI API key."
+    if status == 429:
+        return "AI provider rate limit reached — please try again shortly."
+    return "AI provider is temporarily unavailable."
+
+
 async def extract_json(system: str, user: str, image_b64: Optional[str] = None) -> dict:
     client = _get_client()
     model = config.OPENAI_MODEL_VISION if image_b64 else config.OPENAI_MODEL_JSON
@@ -44,10 +60,13 @@ async def extract_json(system: str, user: str, image_b64: Optional[str] = None) 
         messages = [{"role": "system", "content": system}, {"role": "user", "content": content}]
     else:
         messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
-    resp = await client.chat.completions.create(
-        model=model, messages=messages, temperature=0,
-        response_format={"type": "json_object"},
-    )
+    try:
+        resp = await client.chat.completions.create(
+            model=model, messages=messages, temperature=0,
+            response_format={"type": "json_object"})
+    except OpenAIError as e:
+        logger.error("OpenAI error (extract_json): %s", type(e).__name__)
+        raise AIError(_friendly(e))
     try:
         return json.loads(resp.choices[0].message.content or "{}")
     except Exception:
@@ -56,11 +75,14 @@ async def extract_json(system: str, user: str, image_b64: Optional[str] = None) 
 
 async def complete_text(system: str, user: str) -> str:
     client = _get_client()
-    resp = await client.chat.completions.create(
-        model=config.OPENAI_MODEL_JSON,
-        messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
-        temperature=0.2,
-    )
+    try:
+        resp = await client.chat.completions.create(
+            model=config.OPENAI_MODEL_JSON,
+            messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
+            temperature=0.2)
+    except OpenAIError as e:
+        logger.error("OpenAI error (complete_text): %s", type(e).__name__)
+        raise AIError(_friendly(e))
     return (resp.choices[0].message.content or "").strip()
 
 
@@ -68,7 +90,10 @@ async def transcribe(file_bytes: bytes, filename: str = "audio.m4a") -> str:
     client = _get_client()
     f = io.BytesIO(file_bytes)
     f.name = filename
-    resp = await client.audio.transcriptions.create(
-        model=config.OPENAI_MODEL_TRANSCRIBE, file=f, response_format="json",
-    )
+    try:
+        resp = await client.audio.transcriptions.create(
+            model=config.OPENAI_MODEL_TRANSCRIBE, file=f, response_format="json")
+    except OpenAIError as e:
+        logger.error("OpenAI error (transcribe): %s", type(e).__name__)
+        raise AIError(_friendly(e))
     return getattr(resp, "text", "") or ""

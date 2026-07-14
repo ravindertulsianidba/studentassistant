@@ -1,6 +1,8 @@
 # AI Reliability Test Report — Student Assistant
 
-Status: **PENDING CREDENTIALS.** The AI layer, prompts, and risk rules are implemented and unit-safe (endpoints return clean 503 without a key). The fixed regression set below must be executed once `OPENAI_API_KEY` is configured. This file defines the suite and pass criteria; results will be filled after the key run.
+Status: **BLOCKED — OpenAI billing required.** The supplied `OPENAI_API_KEY` is valid but the OpenAI account returns `insufficient_quota` (no credit). The AI layer, prompts, and risk rules are implemented and verified to degrade cleanly (HTTP 503 with a clear message) rather than crash. The fixed regression set below WILL be executed once credits are added to the OpenAI account (Platform → Billing). This file defines the suite and pass criteria; results will be filled after the billed run.
+
+> Action required by owner: add a payment method / credits at https://platform.openai.com/account/billing then notify to run the suite.
 
 ## Fixed regression set (inputs)
 1. Clear task — "Email the TA about my grade" → task, no invented date.
