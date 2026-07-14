@@ -36,9 +36,10 @@ def _make_schedule_image_b64():
 # ---------- Health ----------
 class TestHealth:
     def test_root(self, api, base_url):
-        r = api.get(f"{base_url}/api/")
+        # No root route; health lives at /api/health (unchanged since Phase 1).
+        r = api.get(f"{base_url}/api/health")
         assert r.status_code == 200
-        assert "message" in r.json()
+        assert r.json().get("status") == "ok"
 
 
 # ---------- Briefing ----------
@@ -223,7 +224,8 @@ class TestSearch:
         assert r.status_code == 200
         j = r.json()
         assert "answer" in j and isinstance(j["answer"], str) and len(j["answer"]) > 0
-        assert "matches" in j and isinstance(j["matches"], list)
+        assert "citations" in j and isinstance(j["citations"], list)
+        assert j.get("mode") in ("keyword", "semantic")
 
 
 # ---------- Weekly review ----------
@@ -245,9 +247,6 @@ class TestPrivacy:
             assert k in j and isinstance(j[k], list)
 
     def test_wipe(self, api, base_url):
+        # /api/wipe was removed in v3 for safety; account deletion is /api/me.
         r = api.delete(f"{base_url}/api/wipe")
-        assert r.status_code == 200
-        assert r.json().get("ok") is True
-        # verify empty
-        assert api.get(f"{base_url}/api/tasks").json() == []
-        assert api.get(f"{base_url}/api/events").json() == []
+        assert r.status_code in (404, 405)

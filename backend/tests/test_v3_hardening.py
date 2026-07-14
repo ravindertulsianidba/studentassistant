@@ -43,8 +43,10 @@ class TestHealth:
         assert r.status_code == 200
         d = r.json()
         assert d["status"] == "ok"
-        assert d["ai_configured"] is False
-        assert d["google_configured"] is False
+        # config-dependent flags: just assert they are present booleans + provider set
+        assert isinstance(d["ai_configured"], bool)
+        assert isinstance(d["google_configured"], bool)
+        assert d["ai_provider"] in ("openai", "fixture")
 
 
 # ---------- Auth ----------
@@ -194,21 +196,24 @@ class TestSecurity:
         assert 429 in codes, f"Expected a 429, got codes: {set(codes)}"
 
 
-# ---------- AI 503 degradation ----------
+# ---------- AI endpoints degrade gracefully (never 500) ----------
+# Historically these asserted 503 (dead key). AI is now a working dependency
+# with a deterministic fixture fallback, so we assert graceful handling: a
+# success or a clean 503 — never a 500/uncaught error.
 class TestAI503:
-    def test_capture_503(self, s, user_a):
-        r = s.post(f"{API}/capture", headers=h(user_a), json={"text": "hi"}, timeout=15)
-        assert r.status_code == 503, r.text
+    def test_capture_ok_or_503(self, s, user_a):
+        r = s.post(f"{API}/capture", headers=h(user_a), json={"text": "read chapter 3 by Friday"}, timeout=30)
+        assert r.status_code in (200, 503), r.text
 
-    def test_import_text_503(self, s, user_a):
+    def test_import_text_ok_or_503(self, s, user_a):
         r = s.post(f"{API}/import", headers=h(user_a),
-                   json={"text": "syllabus content"}, timeout=15)
-        assert r.status_code == 503, r.text
+                   json={"text": "syllabus content, assignment due Sept 15"}, timeout=30)
+        assert r.status_code in (200, 503), r.text
 
-    def test_notes_generate_503(self, s, user_a):
+    def test_notes_generate_ok_or_503(self, s, user_a):
         r = s.post(f"{API}/notes/generate", headers=h(user_a),
-                   json={"title": "L1", "transcript": "hello world"}, timeout=15)
-        assert r.status_code == 503, r.text
+                   json={"title": "L1", "transcript": "hello world lecture content"}, timeout=30)
+        assert r.status_code in (200, 503), r.text
 
     def test_search_503(self, s, user_a):
         # Need to first ensure there are chunks with the term, otherwise search short-circuits
@@ -225,10 +230,10 @@ class TestAI503:
         if r.status_code == 200:
             assert "couldn't find" in r.json().get("answer", "").lower()
 
-    def test_transcribe_503(self, s, user_a):
+    def test_transcribe_ok_or_503(self, s, user_a):
         files = {"file": ("audio.m4a", b"fake-audio-bytes", "audio/mp4")}
-        r = s.post(f"{API}/transcribe", headers=h(user_a), files=files, timeout=20)
-        assert r.status_code == 503, r.text
+        r = s.post(f"{API}/transcribe", headers=h(user_a), files=files, timeout=30)
+        assert r.status_code in (200, 503), r.text
 
 
 # ---------- Non-AI CRUD ----------

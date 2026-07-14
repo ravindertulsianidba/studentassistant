@@ -1,4 +1,4 @@
-import pytest, requests, os
+import pytest, requests, os, uuid
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -12,6 +12,11 @@ def base_url():
 
 @pytest.fixture(scope="session")
 def api():
+    # Authenticated session (auth was added in Phase 1; legacy suites need a token).
     s = requests.Session()
     s.headers.update({"Content-Type": "application/json"})
+    email = f"TEST_legacy_{uuid.uuid4().hex[:8]}@example.com"
+    r = s.post(f"{BASE_URL}/api/auth/dev-login", json={"email": email}, timeout=15)
+    r.raise_for_status()
+    s.headers.update({"Authorization": f"Bearer {r.json()['access_token']}"})
     return s

@@ -1,0 +1,40 @@
+{
+  "summary": "Post-refactor regression on server.py -> routers/{auth,content,planner,reliability}.py against LIVE OpenAI (AI_PROVIDER=openai, ai_live=true). 17/17 new regression tests PASS in 37s, covering every group requested. No 500s and no NameError entries in backend.err.log since 20:00 UTC (only the previously-fixed defaultdict entries at 19:57/19:59 remain historical). Verified: (1) auth: dev-login issues tokens, /me returns correct email, unauth /api/tasks=401, /auth/refresh rotates and old refresh becomes 401, /auth/logout revokes; (2) A-vs-B isolation: A's tasks/events/courses/export not visible to B, B PATCH & DELETE of A's task both return 404 and A's task survives; (3) tasks/events CRUD 200; task->status=done cancels its pending reminders (status=cancelled); (4) LIVE AI: /capture returns real committed/review, /import returns doc_type + review items, /notes/generate returns study_notes dict with real content, /search returns {answer, citations, mode}; (5) /api/briefing returns 200 with stats/risks/recommendation (the regression is FIXED), plus /evening-review, /weekly-review, /timeline (+?kind=task), /courses, /courses/{name}, /review all 200; (6) reliability: /capture writes commitments (state scheduled/detected) and ledger transitions; reminder lifecycle: delivered sets external_id, snoozed reschedules to snooze_until (status becomes 'scheduled' per rel.set_reminder_status), failed retries increment retry_count to 3 and final state=failed; /reminders/sync returns reminders+routines+quiet_hours+server_time; /reminders/health returns counts; (7) calendar: POST /events -> visible in /calendar/pending; /calendar/sync {mappings} returns synced:1 and pending no longer includes it; /calendar/unlink/{id} reappears; (8) chunked upload: init->chunk(0)->/complete=409 (missing 1/2), chunk(1)->/complete=200 with {transcript_id,text,bytes}, repeat /complete=200 same transcript_id (idempotent); (9) Idempotency-Key: two /capture with same key -> byte-identical bodies, ai-usage unchanged; (10) daily cap: PUT prefs daily_ai_limit=1 -> first capture 200, second capture 429 with 'limit' in message, restore to 150 and /ai-usage returns used/limit/remaining; (11) PUT/GET /prefs persists morning_time; /export includes commitments, ledger, reminders, tasks, events; DELETE /me returns 200 and prior refresh_token becomes 401. All endpoints reachable — no missing routes. Health: {ai_provider: openai, ai_configured: true, ai_live: true, db: true}.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/search", "issue": "Still consumes 1 AI-cap unit when top!=[] even if the LLM answer is trivial; on empty corpus the enforce_ai gate is skipped correctly. Documented in iteration_4, unchanged by refactor."},
+      {"endpoint": "In-memory rate_limit()", "issue": "Per-process defaultdict keyed by client host; behind multi-pod ingress the effective limit is N x limit. Same as prior iterations."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_refactor_regression.py",
+    "/app/test_reports/pytest/refactor_regression.xml"
+  ],
+  "action_items": [
+    "None required — refactor is behavior-preserving; the /api/briefing NameError regression is verified fixed and no new 500s observed.",
+    "(Carry-over, optional) split /app/backend/routers/planner.py and content.py further if they grow; currently within limits.",
+    "(Carry-over, optional) replace in-memory rate limiter with shared store before horizontal scale-out."
+  ],
+  "critical_code_review_comments": [
+    "Each router file imports the FULL 20-symbol tuple from core.py plus every model, though most use a small subset. Not a bug — just noisy; consider narrowing imports per file for readability.",
+    "core.py still imports FastAPI/APIRouter/UploadFile/Form/File/CORSMiddleware/AsyncIOMotorClient/BaseModel it doesn't use after the split. Dead imports; safe to prune.",
+    "routers/*.py each re-import `uuid,json,re,io,time,defaultdict,datetime,timezone,timedelta,Optional,List,Any,Dict,fastapi.*,config,ai_service,auth,reliability,vectorstore,db,models.*` even when only some are needed. Consolidate or prune to reduce cognitive load.",
+    "server.py exception_handler(Exception) masks the traceback in the client response (correct) but the log line uses type(exc).__name__ only — for on-call debugging, including exc as %s or logger.exception would surface the message + stack trace inline."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_refactor_regression.py (new)"
+  ],
+  "success_rate": {"backend": "100% (17/17)", "frontend": "N/A (backend-only per request)"},
+  "seed_data_creation": "Each test class creates a fresh dev-login user prefixed TEST_<group>_<uuid8>@uni.edu via POST /api/auth/dev-login. No shared state; A/B isolation test uses two distinct users. Idempotency keys prefixed 'idem-'/'cap-' with random suffixes.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Public base URL: https://semester-sync-7.preview.emergentagent.com. AI_PROVIDER=openai with funded key (LIVE — expect real content in /capture, /import, /notes/generate, /search answers; do NOT assert exact strings). Refactor complete: server.py=91 LOC (assembly only), routers/auth.py, content.py, planner.py, reliability.py. To re-run the full regression: `pytest /app/backend/tests/test_refactor_regression.py -v` (~37s). Prior suites still valid: backend_test.py, test_v2_features.py, test_v3_hardening.py, test_phase2_reliability.py.",
+  "rca_of_issue": "No open issues. Refactor is behavior-preserving. The previously-reported /api/briefing 500 (NameError: defaultdict not defined) is verified fixed — planner.py line 6 imports defaultdict, and briefing() returns 200 with all required keys. Prior error timestamps in backend.err.log (19:57, 19:59 UTC on 2026-07-14) are pre-fix; nothing after 20:00 UTC."
+}

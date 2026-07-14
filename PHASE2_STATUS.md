@@ -128,3 +128,42 @@ READY. Prerequisites in place:
 - Independent build paths documented in `ANDROID_RELEASE_GUIDE.md` (EAS cloud **or** local `expo prebuild` + Gradle).
 - Set build-time env before building: `EXPO_PUBLIC_BACKEND_URL` (+ Google client IDs).
 - After install, run the device checklist above; nothing marked 📱 is "working" until it passes on hardware.
+
+---
+
+# Release-Readiness Checklist (pre-APK)
+
+Classification: **Verified** | **Code complete, device testing required** | **Build testing required** | **Production setup required** | **Blocked**
+
+| # | Area | Status | Evidence / Note |
+|---|------|--------|-----------------|
+| 1 | OpenAI live validation | **Verified** | provider=openai, HTTP 200 for capture/import/notes/transcribe(exact)/embeddings(1536)/search(grounded+cited) |
+| 2 | Authentication & user isolation | **Verified** | test_v3_hardening TestAuth + TestIsolation pass (task/event/source/export/courses scoped; B cannot patch/delete A) |
+| 3 | MongoDB | **Verified** | health db:true; startup indexes created; full CRUD green |
+| 4 | Qdrant (vector store) | **Production setup required** | code + graceful fallback verified; embeddings live (1536-d); semantic retrieval proven via in-memory Qdrant; prod must run the shipped `qdrant` service (`QDRANT_URL`) |
+| 5 | Capture & import extraction | **Verified** | live: dates resolved, exam→review, syllabus classified w/ dated items |
+| 6 | Transcription | **Verified** | live Whisper returned exact text (TTS round-trip) + chunked reassembly exact |
+| 7 | Search | **Verified** (keyword) / semantic **Production setup required** | keyword grounded answer + citations live; semantic needs prod Qdrant |
+| 8 | Reliability ledger + commitment state machine | **Verified** | test_phase2_reliability 13/13 (transitions + append-only ledger) |
+| 9 | Reminders (server model, retry, sync, health) | **Verified** | lifecycle/retry/snooze/sync/health tested |
+| 9b | Reminders firing on device (schedule/snooze/done/reboot restore) | **Code complete, device testing required** | `src/services/notifications.ts` — not verifiable in Expo Go/web |
+| 10 | Calendar sync (server mapping, dedupe, recovery) | **Verified** | /calendar/pending, /sync, /unlink tested |
+| 10b | Device-calendar writes (recurring) | **Code complete, device testing required** | `src/services/calendar.ts` |
+| 11 | Chunked upload & recovery | **Verified** | init/chunk/complete, 409-on-incomplete, idempotent complete, retry logic present |
+| 12 | Daily AI cap | **Verified** | over-limit → 429; env default; per-user; /ai-usage |
+| 13 | Android configuration (permissions, plugins, FG service) | **Build testing required** | app.json + plugins set; must be validated in a build |
+| 14 | APK build readiness | **Build testing required** | eas.json `preview` profile + local Gradle path documented |
+| 15 | AAB build readiness | **Build testing required** | eas.json `production` (app-bundle) profile |
+| 16 | Background/locked-screen recording | **Code complete, device testing required** | `app/record.tsx` + UIBackgroundModes + FG-service perms |
+| 17 | Scheduled notifications | **Code complete, device testing required** | device-only |
+| 18 | Snooze / Done actions | **Code complete, device testing required** | device-only |
+| 19 | Notification restoration after reboot | **Code complete, device testing required** | `syncAndSchedule()` on launch; device-only |
+| 20 | Device-calendar writes | **Code complete, device testing required** | device-only |
+| 21 | Share-sheet export | **Code complete, device testing required** | `expo-sharing`; device-only |
+| 22 | Privacy policy | **Production setup required** | `PRIVACY_AND_DATA_HANDLING.md` drafted; a published, linked policy URL is required for store submission |
+| 23 | Crash reporting | **Production setup required** | NOT integrated (no Sentry/Crashlytics). Recommend adding before store release |
+| 24 | Production logging & monitoring | **Production setup required** | app logs to stdout + `/api/health`; central log aggregation/alerting to be set up on the VPS |
+| 25 | Backup & recovery | **Production setup required** | procedure documented in `OPERATIONS_RUNBOOK.md`; automated Mongo/Qdrant backups must be configured on the VPS |
+
+**Explicitly NOT verified (require a physical device):** items 9b, 16, 17, 18, 19, 20, 21.
+**Not production-ready** — this is a pre-APK checkpoint pending independent review, APK build, and device testing.
