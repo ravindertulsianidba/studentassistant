@@ -4,6 +4,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import * as Haptics from "expo-haptics";
 import * as ImagePicker from "expo-image-picker";
+import * as DocumentPicker from "expo-document-picker";
 import { Feather } from "@expo/vector-icons";
 import { C, S, R, F } from "@/src/theme";
 import { api } from "@/src/api";
@@ -24,12 +25,33 @@ export default function Capture() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<any>(null);
   const [hint, setHint] = useState(false);
+  const [err, setErr] = useState("");
 
   const submit = async () => {
     if (!text.trim()) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setLoading(true);
     try { setResult(await api.post("/capture", { text })); } catch (e) {} finally { setLoading(false); }
+  };
+
+  const pickDocument = async () => {
+    setErr("");
+    const r = await DocumentPicker.getDocumentAsync({
+      type: ["application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "text/plain"],
+      copyToCacheDirectory: true,
+    });
+    if (r.canceled || !r.assets?.[0]) return;
+    const a = r.assets[0];
+    setLoading(true);
+    try {
+      const form = new FormData();
+      form.append("file", { uri: a.uri, name: a.name, type: a.mimeType || "application/octet-stream" } as any);
+      const res = await fetch(`${api.base}/import/file`, { method: "POST", headers: { ...api.authHeader() } as any, body: form });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "Upload failed");
+      setResult({ committed: [], review: data.review || [],
+        docType: data.ai_extracted ? "document" : "document · text saved (AI extraction pending)" });
+    } catch (e: any) { setErr(e.message || "Upload failed"); } finally { setLoading(false); }
   };
 
   const pickFile = async (fromCamera: boolean) => {
@@ -91,8 +113,10 @@ export default function Capture() {
                 <View style={styles.orRow}><View style={styles.hr} /><Text style={styles.or}>or capture anything</Text><View style={styles.hr} /></View>
                 <View style={styles.attachRow}>
                   <Btn label="Photo" variant="soft" icon="camera" onPress={() => pickFile(true)} testID="capture-photo" style={{ flex: 1 }} />
-                  <Btn label="File / Screenshot" variant="soft" icon="image" onPress={() => pickFile(false)} testID="capture-file" style={{ flex: 1 }} />
+                  <Btn label="Gallery" variant="soft" icon="image" onPress={() => pickFile(false)} testID="capture-file" style={{ flex: 1 }} />
                 </View>
+                <Btn label="Document (PDF / DOCX / TXT)" variant="soft" icon="file" onPress={pickDocument} testID="capture-document" style={{ marginTop: S.sm }} />
+                {err ? <Text style={styles.errTxt} testID="capture-error">{err}</Text> : null}
                 <Text style={styles.hintSmall}>Add a schedule, syllabus, email, or slide — I'll figure out what it is.</Text>
               </>
             ) : null}
@@ -158,4 +182,5 @@ const styles = StyleSheet.create({
   attachRow: { flexDirection: "row", gap: S.sm, marginTop: S.md },
   hintSmall: { fontFamily: F.body, fontSize: 12, color: C.onSurface3, marginTop: S.sm, textAlign: "center" },
   docType: { fontFamily: F.bodyBold, fontSize: 14, color: C.brand, textAlign: "center", marginBottom: S.sm, textTransform: "capitalize" },
+  errTxt: { fontFamily: F.bodyMed, fontSize: 12, color: C.error, textAlign: "center", marginTop: S.sm },
 });

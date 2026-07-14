@@ -28,3 +28,12 @@ Method: automated pytest (`/app/backend/tests/test_v3_hardening.py`) + manual cu
 AI content-producing paths (capture→commit, import extraction, notes generation, search answers, transcription) require `OPENAI_API_KEY`; verified to fail safely (503) without it. Full end-to-end AI functional runs are covered by AI_RELIABILITY_TEST_REPORT.md once the key is configured.
 
 Remaining risk: none in tested scope. Remediation completed: DELETE now returns 404 on missing rows; placeholder JWT_SECRET rejected when ALLOW_INSECURE_DEV=false.
+
+## Real document support (Capture Anything — added, verified)
+| Req | Method | Expected | Actual | Result |
+|---|---|---|---|---|
+| PDF/DOCX/TXT upload | POST /api/import/file (multipart) | text extracted + source stored + searchable chunks | TXT (112 chars) & DOCX (42 chars) extracted, source_docs + chunks written, timeline entries created | PASS |
+| Unsupported type | upload .xyz | 415 | 415 | PASS |
+| AI extraction on document | after upload | items→AI Inbox when AI available; graceful defer when not | `ai_extracted:false` + clear `ai_error` while OpenAI quota exhausted (no crash) | PASS (degrade) |
+Frontend: Capture Anything now offers Photo / Gallery / Document (PDF·DOCX·TXT) via the Android document picker; PDF page numbers preserved as `[page N]` markers for source-grounded citations.
+

@@ -542,6 +542,71 @@ async def get_source(sid: str, uid: str = CurrentUser):
         raise HTTPException(status_code=404, detail="Source not found")
     return doc
 
+def extract_text_from_file(filename: str, data: bytes):
+    """Returns (text, page_count). Raises 415 for unsupported types."""
+    name = (filename or "").lower()
+    if name.endswith(".txt"):
+        return data.decode("utf-8", "ignore"), None
+    if name.endswith(".pdf"):
+        import io
+        from pypdf import PdfReader
+        reader = PdfReader(io.BytesIO(data))
+        pages = [(i + 1, (pg.extract_text() or "")) for i, pg in enumerate(reader.pages)]
+        return "\n".join(f"[page {n}]\n{t}" for n, t in pages), len(pages)
+    if name.endswith(".docx"):
+        import io
+        from docx import Document
+        doc = Document(io.BytesIO(data))
+        return "\n".join(p.text for p in doc.paragraphs if p.text), None
+    raise HTTPException(status_code=415, detail="Unsupported file type. Use PDF, DOCX, TXT, or an image.")
+
+
+@api.post("/import/file")
+async def import_file(request: Request, uid: str = CurrentUser, file: UploadFile = File(...)):
+    """Capture Anything for real documents (PDF/DOCX/TXT). Extracts text locally,
+    stores the source + searchable chunks, then (if AI configured) auto-classifies
+    and routes detected items to the AI Inbox. Never silently fails."""
+    rate_limit(request, "ai", 30)
+    raw = await file.read()
+    if len(raw) > config.MAX_UPLOAD_MB * 1024 * 1024:
+        raise HTTPException(status_code=413, detail=f"File too large (max {config.MAX_UPLOAD_MB} MB)")
+    text, pages = extract_text_from_file(file.filename, raw)
+    if not text.strip():
+        raise HTTPException(status_code=422, detail="No readable text found in this file.")
+    src_id = str(uuid.uuid4())
+    await db.source_docs.insert_one({"id": src_id, "user_id": uid, "doc_type": "document",
+        "filename": file.filename, "pages": pages, "text": text, "has_image": False,
+        "created_at": now_iso()})
+    await add_chunks(uid, "source_doc", src_id, f"{file.filename}", None, text)
+    review, ai_extracted, ai_error = [], False, None
+    nowt = datetime.now(timezone.utc)
+    try:
+        data = await ai_service.extract_json(
+            IMPORT_SYS,
+            f"Current date: {nowt.isoformat()} ({nowt.strftime('%A')}). Classify and extract.\n\nDocument text:\n{text[:15000]}")
+        doc_type = (data.get("doc_type") if isinstance(data, dict) else None) or "document"
+        for it in (data.get("items", []) if isinstance(data, dict) else []):
+            existing, _, certain = await find_related(uid, it)
+            if existing and not certain:
+                it["possible_match"] = True
+            rev = build_review(uid, f"import:{doc_type}", f"Imported from {file.filename}", it,
+                               related_id=(existing or {}).get("id"))
+            rev["source_ref"] = {"source_id": src_id, "page": it.get("page")}
+            await db.review.insert_one(dict(rev))
+            review.append(clean(rev))
+        await db.source_docs.update_one({"id": src_id}, {"$set": {"doc_type": doc_type}})
+        ai_extracted = True
+    except ai_service.AIError as e:
+        ai_error = str(e)
+    await db.imports.insert_one({"id": str(uuid.uuid4()), "user_id": uid, "kind": "file",
+        "source_id": src_id, "count": len(review), "created_at": now_iso()})
+    await add_timeline(uid, "import", f"Imported file: {file.filename}",
+                       (f"{len(review)} items detected" if ai_extracted else "text saved · AI extraction pending"),
+                       ref_id=src_id, node="source_material")
+    return {"source_id": src_id, "filename": file.filename, "pages": pages,
+            "chars": len(text), "ai_extracted": ai_extracted, "ai_error": ai_error, "review": review}
+
+
 # ================= TRANSCRIBE + STUDY NOTES =================
 @api.post("/transcribe")
 async def transcribe_audio(uid: str = CurrentUser, file: UploadFile = File(...),
