@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, TextInput, Pressable, ScrollView, KeyboardAvoid
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import * as Haptics from "expo-haptics";
+import * as ImagePicker from "expo-image-picker";
 import { Feather } from "@expo/vector-icons";
 import { C, S, R, F } from "@/src/theme";
 import { api } from "@/src/api";
@@ -29,6 +30,22 @@ export default function Capture() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setLoading(true);
     try { setResult(await api.post("/capture", { text })); } catch (e) {} finally { setLoading(false); }
+  };
+
+  const pickFile = async (fromCamera: boolean) => {
+    const perm = fromCamera
+      ? await ImagePicker.requestCameraPermissionsAsync()
+      : await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) return;
+    const r = fromCamera
+      ? await ImagePicker.launchCameraAsync({ base64: true, quality: 0.6 })
+      : await ImagePicker.launchImageLibraryAsync({ base64: true, quality: 0.6, mediaTypes: "images" });
+    if (r.canceled || !r.assets?.[0]?.base64) return;
+    setLoading(true);
+    try {
+      const res = await api.post("/import", { image_base64: `data:image/jpeg;base64,${r.assets[0].base64}` });
+      setResult({ committed: [], review: res.review, docType: res.doc_type });
+    } catch (e) {} finally { setLoading(false); }
   };
 
   return (
@@ -68,10 +85,22 @@ export default function Capture() {
             ))}
 
             {loading ? <Loading label="Analyzing intent…" /> : <Btn label="Capture" icon="zap" onPress={submit} testID="capture-submit" style={{ marginTop: S.lg }} />}
+
+            {!loading ? (
+              <>
+                <View style={styles.orRow}><View style={styles.hr} /><Text style={styles.or}>or capture anything</Text><View style={styles.hr} /></View>
+                <View style={styles.attachRow}>
+                  <Btn label="Photo" variant="soft" icon="camera" onPress={() => pickFile(true)} testID="capture-photo" style={{ flex: 1 }} />
+                  <Btn label="File / Screenshot" variant="soft" icon="image" onPress={() => pickFile(false)} testID="capture-file" style={{ flex: 1 }} />
+                </View>
+                <Text style={styles.hintSmall}>Add a schedule, syllabus, email, or slide — I'll figure out what it is.</Text>
+              </>
+            ) : null}
           </>
         ) : (
           <>
             <View style={styles.done}><Feather name="check-circle" size={40} color={C.success} /></View>
+            {result.docType ? <Text style={styles.docType}>Detected: {result.docType}</Text> : null}
             {result.committed?.length ? (
               <>
                 <Text style={styles.resHead}>Added for you</Text>
@@ -98,7 +127,7 @@ export default function Capture() {
               <Text style={styles.prompt}>I couldn't detect a commitment. Try rephrasing.</Text>
             ) : null}
             <Btn label="Capture something else" variant="soft" icon="plus" onPress={() => { setText(""); setResult(null); }} style={{ marginTop: S.lg }} />
-            {result.review?.length ? <Btn label="Open Review Queue" variant="ghost" onPress={() => { router.back(); router.push("/(tabs)/review"); }} style={{ marginTop: S.sm }} /> : null}
+            {result.review?.length ? <Btn label="Open AI Inbox" variant="ghost" icon="inbox" onPress={() => { router.back(); router.push("/inbox"); }} style={{ marginTop: S.sm }} /> : null}
             <Btn label="Done" variant="primary" onPress={() => router.back()} style={{ marginTop: S.sm }} testID="capture-done" />
           </>
         )}
@@ -123,4 +152,10 @@ const styles = StyleSheet.create({
   resHead: { fontFamily: F.bodyBold, fontSize: 14, color: C.onSurface3, marginTop: S.md, marginBottom: S.sm },
   resCard: { backgroundColor: C.surface2, borderRadius: R.md, borderWidth: 1, borderColor: C.border, padding: S.md, marginBottom: S.sm, gap: 6 },
   resTitle: { fontFamily: F.bodyBold, fontSize: 15, color: C.onSurface },
+  orRow: { flexDirection: "row", alignItems: "center", gap: S.md, marginTop: S.lg },
+  hr: { flex: 1, height: 1, backgroundColor: C.border },
+  or: { fontFamily: F.bodyMed, fontSize: 12, color: C.onSurface3 },
+  attachRow: { flexDirection: "row", gap: S.sm, marginTop: S.md },
+  hintSmall: { fontFamily: F.body, fontSize: 12, color: C.onSurface3, marginTop: S.sm, textAlign: "center" },
+  docType: { fontFamily: F.bodyBold, fontSize: 14, color: C.brand, textAlign: "center", marginBottom: S.sm, textTransform: "capitalize" },
 });

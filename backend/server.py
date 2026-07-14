@@ -79,10 +79,31 @@ def clean(doc: dict) -> dict:
     return doc
 
 
-async def add_timeline(kind, title, subtitle=None, course=None, ref_id=None):
+def conf_label(c: float) -> str:
+    return "high" if c >= 0.75 else "medium" if c >= 0.5 else "low"
+
+
+def build_review(source: str, raw: str, it: dict, conf: float) -> dict:
+    kind = it.get("kind", "task")
+    label = {"event": "calendar event", "task": "task", "reminder": "reminder",
+             "followup": "follow-up"}.get(kind, "item")
+    if it.get("event_type") == "exam":
+        label = "exam"
+    elif it.get("event_type") in ("class", "lab"):
+        label = f"recurring {it.get('event_type')}"
+    elif it.get("event_type") == "assignment":
+        label = "assignment"
+    return {"id": str(uuid.uuid4()), "source": source, "raw_text": raw, "item": it,
+            "detected": f"I found a {label}: {it.get('title', '')}",
+            "suggestion": f"Add as {label}", "confidence": conf,
+            "confidence_label": conf_label(conf), "status": "pending",
+            "created_at": now_iso()}
+
+
+async def add_timeline(kind, title, subtitle=None, course=None, ref_id=None, entity=None):
     item = {"id": str(uuid.uuid4()), "kind": kind, "title": title,
             "subtitle": subtitle, "course": course, "ref_id": ref_id,
-            "ts": now_iso()}
+            "entity": entity, "ts": now_iso()}
     await db.timeline.insert_one(dict(item))
     return item
 
@@ -111,7 +132,7 @@ class EventIn(BaseModel):
 
 class ImportIn(BaseModel):
     image_base64: str
-    kind: str  # schedule | syllabus | email
+    kind: Optional[str] = "auto"
 
 class NotesIn(BaseModel):
     title: str
@@ -129,7 +150,8 @@ class ReviewActionIn(BaseModel):
 # ---------- Capture ----------
 CAPTURE_SYS = """You are an AI Academic Executive Assistant for a university student.
 Parse the student's natural language into structured commitment items.
-Return ONLY strict JSON: {"items":[{"kind":"event|task|reminder|followup","title":"short imperative","course":null|string,"datetime":ISO8601|null,"end_datetime":ISO8601|null,"location":null|string,"event_type":"class|lab|exam|assignment|meeting|study|personal","confidence":0.0-1.0,"reason":"why"}]}
+Return ONLY strict JSON: {"items":[{"kind":"event|task|reminder|followup","title":"short imperative","course":null|string,"entity":null|string,"datetime":ISO8601|null,"end_datetime":ISO8601|null,"location":null|string,"event_type":"class|lab|exam|assignment|meeting|study|personal","confidence":0.0-1.0,"reason":"why"}]}
+"entity" is the canonical name of the underlying thing this refers to (e.g. "Assignment 2", "Midterm", "SOC101 lecture") so repeat mentions can be linked, or null.
 Rules: classes/labs/exams/meetings/appointments -> kind "event". Assignments/readings/emails/todos -> kind "task". "remind me" -> kind "reminder". Following up with someone -> kind "followup".
 Resolve relative dates (today, tomorrow, Friday, next week) against the provided current date. confidence reflects how sure you are of the intent AND details."""
 
@@ -146,8 +168,7 @@ async def capture(inp: CaptureIn):
             rec = await _commit_item(it, source="voice capture")
             committed.append(rec)
         else:
-            rev = {"id": str(uuid.uuid4()), "source": "capture", "raw_text": inp.text,
-                   "item": it, "confidence": conf, "status": "pending", "created_at": now_iso()}
+            rev = build_review("voice capture", inp.text, it, conf)
             await db.review.insert_one(dict(rev))
             review.append(clean(rev))
     await add_timeline("capture", inp.text[:80], f"{len(committed)} added, {len(review)} to review")
@@ -157,22 +178,40 @@ async def capture(inp: CaptureIn):
 async def _commit_item(it: dict, source="ai"):
     kind = it.get("kind", "task")
     course = it.get("course")
+    entity = (it.get("entity") or "").strip() or None
     if kind == "event":
+        existing = await db.events.find_one({"entity": entity, "course": course}) if entity else None
+        if existing:
+            upd = {k: v for k, v in {"start": it.get("datetime"), "end": it.get("end_datetime"),
+                   "location": it.get("location"), "notes": it.get("reason")}.items() if v}
+            if upd:
+                await db.events.update_one({"id": existing["id"]}, {"$set": upd})
+            await add_timeline("event", it.get("title", existing["title"]), "updated · linked", course, existing["id"], entity)
+            doc = await db.events.find_one({"id": existing["id"]}, {"_id": 0})
+            return {"type": "event", "linked": True, **doc}
         ev = {"id": str(uuid.uuid4()), "title": it.get("title", "Event"),
               "event_type": it.get("event_type") or "personal", "course": course,
               "start": it.get("datetime"), "end": it.get("end_datetime"),
               "location": it.get("location"), "days": it.get("days"),
               "recurring": bool(it.get("recurring")), "notes": it.get("reason"),
-              "created_at": now_iso()}
+              "entity": entity, "created_at": now_iso()}
         await db.events.insert_one(dict(ev))
-        await add_timeline("event", ev["title"], ev.get("event_type"), course, ev["id"])
+        await add_timeline("event", ev["title"], ev.get("event_type"), course, ev["id"], entity)
         return {"type": "event", **clean(ev)}
     else:
+        existing = await db.tasks.find_one({"entity": entity, "course": course, "status": "open"}) if entity else None
+        if existing:
+            upd = {k: v for k, v in {"due": it.get("datetime"), "title": it.get("title")}.items() if v}
+            if upd:
+                await db.tasks.update_one({"id": existing["id"]}, {"$set": upd})
+            await add_timeline("task", it.get("title", existing["title"]), "updated · linked", course, existing["id"], entity)
+            doc = await db.tasks.find_one({"id": existing["id"]}, {"_id": 0})
+            return {"type": "task", "linked": True, **doc}
         tk = {"id": str(uuid.uuid4()), "title": it.get("title", "Task"), "course": course,
               "due": it.get("datetime"), "priority": "high" if kind in ("reminder",) else "normal",
-              "category": kind, "status": "open", "created_at": now_iso()}
+              "category": kind, "status": "open", "entity": entity, "created_at": now_iso()}
         await db.tasks.insert_one(dict(tk))
-        await add_timeline("task", tk["title"], kind, course, tk["id"])
+        await add_timeline("task", tk["title"], kind, course, tk["id"], entity)
         return {"type": "task", **clean(tk)}
 
 
@@ -241,6 +280,35 @@ async def get_timeline(kind: Optional[str] = None, course: Optional[str] = None,
     return docs
 
 
+# ---------- Courses ----------
+@api_router.get("/courses")
+async def get_courses():
+    names = set()
+    for coll in ["tasks", "events", "notes", "timeline"]:
+        for c in await db[coll].distinct("course"):
+            if c:
+                names.add(c)
+    out = []
+    for n in sorted(names):
+        out.append({
+            "name": n,
+            "open_tasks": await db.tasks.count_documents({"course": n, "status": "open"}),
+            "events": await db.events.count_documents({"course": n}),
+            "notes": await db.notes.count_documents({"course": n}),
+        })
+    return out
+
+@api_router.get("/courses/{name}")
+async def course_detail(name: str):
+    return {
+        "name": name,
+        "tasks": await db.tasks.find({"course": name}, {"_id": 0}).to_list(200),
+        "events": await db.events.find({"course": name}, {"_id": 0}).to_list(200),
+        "notes": await db.notes.find({"course": name}, {"_id": 0, "transcript": 0}).sort("created_at", -1).to_list(200),
+        "memory": await db.timeline.find({"course": name}, {"_id": 0}).sort("ts", -1).to_list(200),
+    }
+
+
 # ---------- Review Queue ----------
 @api_router.get("/review")
 async def get_review():
@@ -262,28 +330,30 @@ async def review_action(rid: str, body: ReviewActionIn):
 
 
 # ---------- Import (schedule / syllabus / email) ----------
-IMPORT_SYS = """You are an AI Academic Executive Assistant. Extract structured academic items from the provided image (a screenshot/photo of a {kind}).
-Return ONLY strict JSON: {"items":[{"kind":"event|task","title":string,"course":null|string,"datetime":ISO8601|null,"end_datetime":ISO8601|null,"location":null|string,"event_type":"class|lab|exam|assignment|meeting|study|personal","days":["Mon"]|null,"recurring":bool,"confidence":0.0-1.0,"reason":string}]}
-For schedules: create recurring class/lab events with days & times. For syllabus: assignments/exams/readings/office hours as tasks or events with due dates. For emails: detect deadline changes, room changes, cancellations, meetings as tasks/events."""
+IMPORT_SYS = """You are an AI Academic Executive Assistant. The student uploaded an image, screenshot, or document without labeling it.
+FIRST classify what it is: schedule, syllabus, email, assignment, lecture slide, document, screenshot, or other.
+THEN extract every academic item.
+Return ONLY strict JSON: {"doc_type":string,"items":[{"kind":"event|task","title":string,"course":null|string,"entity":null|string,"datetime":ISO8601|null,"end_datetime":ISO8601|null,"location":null|string,"event_type":"class|lab|exam|assignment|meeting|study|personal","days":["Mon"]|null,"recurring":bool,"confidence":0.0-1.0,"reason":string}]}
+Schedules: recurring class/lab events with days & times. Syllabus: assignments/exams/readings/office hours with due dates. Emails: deadline changes, room changes, cancellations, meetings, announcements.
+"entity" = canonical name of the thing (e.g. 'Assignment 2', 'Midterm', course code) so repeat mentions can be linked, or null."""
 
 @api_router.post("/import")
 async def import_doc(inp: ImportIn):
     now = datetime.now(timezone.utc)
-    sys = IMPORT_SYS.replace("{kind}", inp.kind)
-    user = f"Current date: {now.isoformat()} ({now.strftime('%A')}). Extract all {inp.kind} items from this image."
+    user = f"Current date: {now.isoformat()} ({now.strftime('%A')}). Classify this file, then extract all academic items."
     b64 = inp.image_base64.split(",")[-1]
-    data = await llm_json(sys, user, image_b64=b64)
+    data = await llm_json(IMPORT_SYS, user, image_b64=b64)
+    doc_type = (data.get("doc_type") if isinstance(data, dict) else None) or (inp.kind or "document")
     items = data.get("items", []) if isinstance(data, dict) else []
     review = []
     for it in items:
-        rev = {"id": str(uuid.uuid4()), "source": f"import:{inp.kind}", "raw_text": f"Imported from {inp.kind}",
-               "item": it, "confidence": float(it.get("confidence", 0.6) or 0.6),
-               "status": "pending", "created_at": now_iso()}
+        rev = build_review(f"import:{doc_type}", f"Imported from {doc_type}", it,
+                           float(it.get("confidence", 0.6) or 0.6))
         await db.review.insert_one(dict(rev))
         review.append(clean(rev))
-    await db.imports.insert_one({"id": str(uuid.uuid4()), "kind": inp.kind, "count": len(review), "created_at": now_iso()})
-    await add_timeline("import", f"Imported {inp.kind}", f"{len(review)} items detected")
-    return {"review": review}
+    await db.imports.insert_one({"id": str(uuid.uuid4()), "kind": doc_type, "count": len(review), "created_at": now_iso()})
+    await add_timeline("import", f"Imported {doc_type}", f"{len(review)} items detected")
+    return {"doc_type": doc_type, "review": review}
 
 
 # ---------- Study Notes ----------
@@ -367,6 +437,11 @@ async def briefing():
 
     # risks
     risks = []
+    for t in tasks:
+        d = _parse_dt(t.get("due"))
+        if d and d.date() < today:
+            verb = "You promised to" if t.get("category") in ("followup", "reminder") else "Overdue —"
+            risks.append({"level": "error", "text": f"{verb} {t['title']}"})
     by_day = {}
     for t in deadlines:
         d = _parse_dt(t.get("due"))

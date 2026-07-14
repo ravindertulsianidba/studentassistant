@@ -42,7 +42,8 @@ export default function RootLayout() {
         <Stack screenOptions={{ headerShown: false }}>
           <Stack.Screen name="(tabs)" />
           <Stack.Screen name="quick-capture" options={{ presentation: "modal" }} />
-          <Stack.Screen name="import" options={{ presentation: "modal" }} />
+          <Stack.Screen name="inbox" options={{ presentation: "modal" }} />
+          <Stack.Screen name="course/[name]" options={{ presentation: "modal" }} />
           <Stack.Screen name="notes" options={{ presentation: "modal" }} />
           <Stack.Screen name="search" options={{ presentation: "modal" }} />
         </Stack>

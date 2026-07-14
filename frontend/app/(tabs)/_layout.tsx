@@ -34,10 +34,10 @@ export default function TabLayout() {
       }}
     >
       <Tabs.Screen name="index" options={{ title: "Today", tabBarIcon: ({ color }) => <Feather name="home" size={22} color={color} /> }} />
-      <Tabs.Screen name="timeline" options={{ title: "Timeline", tabBarIcon: ({ color }) => <Feather name="clock" size={22} color={color} /> }} />
+      <Tabs.Screen name="timeline" options={{ title: "Memory", tabBarIcon: ({ color }) => <Feather name="database" size={22} color={color} /> }} />
       <Tabs.Screen name="capture" options={{ title: "", tabBarButton: () => <CaptureButton /> }} />
-      <Tabs.Screen name="review" options={{ title: "Review", tabBarIcon: ({ color }) => <Feather name="inbox" size={22} color={color} /> }} />
-      <Tabs.Screen name="profile" options={{ title: "You", tabBarIcon: ({ color }) => <Feather name="user" size={22} color={color} /> }} />
+      <Tabs.Screen name="courses" options={{ title: "Courses", tabBarIcon: ({ color }) => <Feather name="book" size={22} color={color} /> }} />
+      <Tabs.Screen name="profile" options={{ title: "Settings", tabBarIcon: ({ color }) => <Feather name="settings" size={22} color={color} /> }} />
     </Tabs>
   );
 }

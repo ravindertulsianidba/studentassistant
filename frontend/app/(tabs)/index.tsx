@@ -17,13 +17,14 @@ export default function Today() {
   const router = useRouter();
   const [data, setData] = useState<any>(null);
   const [tasks, setTasks] = useState<any[]>([]);
+  const [recent, setRecent] = useState<any[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
     try {
-      const [b, t] = await Promise.all([api.get("/briefing"), api.get("/tasks?status=open")]);
-      setData(b); setTasks(t);
+      const [b, t, m] = await Promise.all([api.get("/briefing"), api.get("/tasks?status=open"), api.get("/timeline?kind=all")]);
+      setData(b); setTasks(t); setRecent(m.slice(0, 5));
     } catch (e) {} finally { setLoading(false); setRefreshing(false); }
   }, []);
 
@@ -55,7 +56,7 @@ export default function Today() {
             <View style={styles.heroTopRow}>
               <View style={styles.heroActions}>
                 <IconBtn icon="search" onPress={() => router.push("/search")} testID="open-search" />
-                <IconBtn icon="upload" onPress={() => router.push("/import")} testID="open-import" />
+                <IconBtn icon="inbox" onPress={() => router.push("/inbox")} testID="open-inbox" />
                 <IconBtn icon="file-text" onPress={() => router.push("/notes")} testID="open-notes" />
               </View>
             </View>
@@ -65,6 +66,11 @@ export default function Today() {
         </View>
 
         <View style={styles.body}>
+          <Pressable style={styles.prompt} onPress={() => router.push("/quick-capture")} testID="ai-prompt">
+            <View style={styles.promptIcon}><Feather name="zap" size={18} color={C.onBrand} /></View>
+            <Text style={styles.promptTxt}>What can I help you remember today?</Text>
+            <Feather name="mic" size={18} color={C.brand} />
+          </Pressable>
           {loading ? <Loading label="Preparing your briefing..." /> : (
             <>
               <View style={styles.stats}>
@@ -74,9 +80,22 @@ export default function Today() {
                 <Stat label="Review" value={data?.stats?.review ?? 0} />
               </View>
 
+              {data?.stats?.review ? (
+                <Pressable onPress={() => router.push("/inbox")} testID="inbox-summary" style={{ marginTop: S.lg }}>
+                  <Card style={styles.rowCard}>
+                    <View style={styles.iconChip}><Feather name="inbox" size={16} color={C.onBrand3} /></View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.itemTitle}>AI Inbox</Text>
+                      <Text style={styles.itemSub}>{data.stats.review} suggestion{data.stats.review > 1 ? "s" : ""} waiting for review</Text>
+                    </View>
+                    <Feather name="chevron-right" size={18} color={C.onSurface3} />
+                  </Card>
+                </Pressable>
+              ) : null}
+
               {data?.risks?.length ? (
                 <View style={{ marginTop: S.xl }}>
-                  <SectionTitle>Risk alerts</SectionTitle>
+                  <SectionTitle>What needs attention</SectionTitle>
                   <Card testID="risk-card" style={{ gap: S.md }}>
                     {data.risks.map((r: any, i: number) => (
                       <View key={i} style={styles.riskRow}>
@@ -127,6 +146,22 @@ export default function Today() {
                   </Card>
                 )) : <Empty icon="coffee" title="No open tasks." sub="Tap + to capture something." />}
               </View>
+
+              <View style={{ marginTop: S.xl }}>
+                <View style={styles.memHead}>
+                  <SectionTitle>Recent memory</SectionTitle>
+                  <Pressable onPress={() => router.push("/(tabs)/timeline")} testID="see-memory"><Text style={styles.seeAll}>See all</Text></Pressable>
+                </View>
+                {recent.length ? recent.map((m: any) => (
+                  <Card key={m.id} style={styles.rowCard}>
+                    <Feather name="database" size={16} color={C.brand} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.itemTitle} numberOfLines={1}>{m.title}</Text>
+                      {m.subtitle ? <Text style={styles.itemSub}>{m.subtitle}</Text> : null}
+                    </View>
+                  </Card>
+                )) : <Empty icon="database" title="Nothing captured yet." />}
+              </View>
             </>
           )}
         </View>
@@ -172,4 +207,9 @@ const styles = StyleSheet.create({
   riskRow: { flexDirection: "row", alignItems: "center", gap: S.sm },
   riskTxt: { fontFamily: F.body, fontSize: 13, color: C.onSurface, flex: 1 },
   checkbox: { width: 22, height: 22, borderRadius: 6, borderWidth: 2, borderColor: C.borderStrong },
+  prompt: { flexDirection: "row", alignItems: "center", gap: S.md, backgroundColor: C.surface2, borderRadius: R.lg, borderWidth: 1, borderColor: C.borderStrong, padding: S.lg },
+  promptIcon: { width: 34, height: 34, borderRadius: R.pill, backgroundColor: C.brand, alignItems: "center", justifyContent: "center" },
+  promptTxt: { flex: 1, fontFamily: F.bodyMed, fontSize: 15, color: C.onSurface2 },
+  memHead: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" },
+  seeAll: { fontFamily: F.bodyMed, fontSize: 13, color: C.brand },
 });

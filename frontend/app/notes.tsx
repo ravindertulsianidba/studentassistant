@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { View, Text, StyleSheet, TextInput, Pressable, ScrollView, KeyboardAvoidingView, Platform } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useRouter } from "expo-router";
+import { useRouter, useLocalSearchParams } from "expo-router";
 import { Feather } from "@expo/vector-icons";
 import { C, S, R, F } from "@/src/theme";
 import { api } from "@/src/api";
@@ -10,6 +10,7 @@ import { Card, Btn, Loading, SectionTitle } from "@/src/components/ui";
 export default function Notes() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const { id } = useLocalSearchParams<{ id?: string }>();
   const [list, setList] = useState<any[]>([]);
   const [mode, setMode] = useState<"list" | "create">("list");
   const [title, setTitle] = useState("");
@@ -31,7 +32,8 @@ export default function Notes() {
     } catch (e) {} finally { setLoading(false); }
   };
 
-  const openNote = async (id: string) => { setNote(await api.get(`/notes/${id}`)); };
+  const openNote = async (nid: string) => { setNote(await api.get(`/notes/${nid}`)); };
+  useEffect(() => { if (id) openNote(id); }, [id]);
 
   const sn = note?.study_notes || {};
 

@@ -33,8 +33,8 @@ export default function Profile() {
   return (
     <View style={styles.root}>
       <ScrollView contentContainerStyle={{ padding: S.lg, paddingTop: insets.top + S.lg, paddingBottom: 120 }} showsVerticalScrollIndicator={false}>
-        <Text style={styles.title}>You</Text>
-        <Text style={styles.sub}>Your executive assistant & privacy</Text>
+        <Text style={styles.title}>Settings</Text>
+        <Text style={styles.sub}>Weekly review, privacy & your data</Text>
 
         <View style={{ marginTop: S.xl }}>
           <SectionTitle>Weekly review</SectionTitle>

@@ -1,6 +1,10 @@
 import pytest, requests, os
+from pathlib import Path
+from dotenv import load_dotenv
 
-BASE_URL = "https://semester-sync-7.preview.emergentagent.com"
+load_dotenv(Path(__file__).resolve().parents[2] / "frontend" / ".env")
+BASE_URL = (os.environ.get("EXPO_PUBLIC_BACKEND_URL") or os.environ.get("EXPO_BACKEND_URL") or "").rstrip("/")
+assert BASE_URL, "EXPO_PUBLIC_BACKEND_URL must be set in frontend/.env"
 
 @pytest.fixture(scope="session")
 def base_url():

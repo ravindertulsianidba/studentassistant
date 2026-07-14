@@ -1,0 +1,38 @@
+{
+  "summary": "Student Assistant v2: full backend + frontend regression PASSED. Backend 25/25 (16 v1 in backend_test.py + 9 new v2 in test_v2_features.py) including LLM-driven capture, auto-classify import with real JPEG, entity-based relationship linking (Assignment 2 Sociology follow-up correctly UPDATED not duplicated), overdue nudges ('Overdue —' / 'You promised to'), review shape with detected/suggestion/confidence_label, /api/courses + /api/courses/{name}, and approve/ignore/delete review actions. Frontend 5-tab nav (Today/Memory/center Capture FAB/Courses/Settings) verified; the v1 FAB routing bug is FIXED (FAB now navigates to /quick-capture cleanly). AI prompt bar, KPI stats, AI Inbox summary card, 'What needs attention' with Overdue nudge, and Recent memory all render on Home. Quick-capture: text capture works end-to-end (LLM committed a Calendar item), Photo/File attach buttons present. AI Inbox shows confidence badges + Approve/Edit/Ignore/Delete; approve commits and empties inbox. Memory tab: search box, type filter chips, course filter chips (All courses + CS101) render; jump-to-source arrows on note/course items. Courses tab lists CS101 with counts; tapping opens /course/CS101 workspace with Schedule, Assignments & tasks, Study notes, Memory sections.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "Global styles/theme", "issue": "Console warnings persist: '\"shadow*\" style props are deprecated. Use boxShadow' and 'props.pointerEvents is deprecated. Use style.pointerEvents'. Non-blocking on web preview, but should be migrated for RN new architecture. Likely origin: /app/frontend/src/theme (shadow token) and (tabs)/_layout.tsx pointerEvents='box-none'."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/backend/tests/test_v2_features.py",
+    "/app/backend/tests/conftest.py",
+    "/app/test_reports/pytest/pytest_results.xml",
+    "/app/test_reports/pytest/pytest_results_v2.xml"
+  ],
+  "action_items": [
+    "(Optional / non-blocking) Migrate 'shadow*' style props in src/theme.ts to boxShadow, and move pointerEvents='box-none' on (tabs)/_layout.tsx CaptureButton into style.pointerEvents.",
+    "(Optional) Consider removing the placeholder /app/frontend/app/(tabs)/capture.tsx (or converting its Tabs.Screen to href:null) since it is only used as a tab-bar slot for the FAB and its <Redirect> is never triggered now that routing goes to /quick-capture."
+  ],
+  "critical_code_review_comments": [
+    "server.py still uses @app.on_event('shutdown') (Starlette deprecation). Prefer FastAPI lifespan.",
+    "server.py file is ~520 lines - within limits, but consider splitting into routers (capture/tasks/events/courses/notes/review) if it grows further.",
+    "conftest.py now reads EXPO_PUBLIC_BACKEND_URL from frontend/.env; no hardcoded URL remaining."
+  ],
+  "updated_files": [
+    "/app/backend/tests/conftest.py (removed hardcoded BASE_URL; now loads from frontend/.env)",
+    "/app/backend/tests/test_v2_features.py (new — 9 v2 feature tests)"
+  ],
+  "success_rate": {"backend": "100% (25/25)", "frontend": "100% of critical flows verified"},
+  "seed_data_creation": "During UI test: TEST_UI Read chapter 5 (CS101 task), TEST_UI Lecture (CS101 event), one low-confidence capture (review item) — some cleared by approve; residual TEST_UI-prefixed rows remain. Backend suite ends with /api/wipe.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Backend suite (25 tests) runs in ~80s hitting real LLM. FAB → /quick-capture works (v1 bug fixed). CS101 seeded data is helpful for UI verification; backend test suite ends with /api/wipe. If reseeding is needed, POST /api/tasks and /api/events with course='CS101'. All testIDs used: briefing-greeting, stat-{classes,deadlines,tasks,review}, ai-prompt, inbox-summary, risk-card, capture-fab, capture-input, capture-submit, capture-photo, capture-file, capture-close, capture-done, memory-search, filter-{all,capture,task,event,note,import}, course-all, course-chip-{name}, course-{name}, inbox-{id}, inbox-approve-{id}, inbox-ignore-{id}, inbox-delete-{id}, inbox-title-{id}, inbox-empty, inbox-close.",
+  "rca_of_issue": "N/A – no reproducible bugs this iteration. v1 FAB navigation bug already remediated by routing FAB to /quick-capture (verified: URL becomes /quick-capture and modal renders with all testIDs)."
+}
