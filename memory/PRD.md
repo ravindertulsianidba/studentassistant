@@ -1,5 +1,16 @@
 # Student Assistant — PRD
 
+## Implemented v2 (2026-07-14) — UX & Intelligence Refinements
+- Navigation simplified to 5 mental models: **Today, Capture (FAB), Memory, Courses, Settings**.
+- **Timeline → Memory**: global search + type filter + course filter + jump-to-source (notes/courses).
+- **Review Queue → AI Inbox** (modal): detected summary, source, confidence label (High/Needs review/Low), suggested action, Approve/Edit/Ignore/Delete.
+- **Capture Anything**: one workflow — text/voice + attach photo/file; backend auto-classifies doc type (schedule/syllabus/email/etc.), no manual classification.
+- **Home** feels like an executive assistant: AI prompt bar, KPI stats, AI Inbox summary, "What needs attention" proactive alerts, Recent memory.
+- **Proactive intelligence**: overdue/"you promised to" nudges, multi-deadline & near-due warnings, missing schedule/syllabus alerts.
+- **Relationship detection**: capture/import extract an `entity`; repeat mentions of same entity+course UPDATE the existing task/event (linked) instead of duplicating.
+- **Course workspace** (/course/[name]): schedule, assignments/tasks, study notes, filtered memory.
+- Confidence indicators surfaced throughout. Backend: 25/25 tests pass.
+
 ## Original Problem Statement
 Build "Student Assistant", an AI Academic Executive Assistant (Android-first, Expo/React Native) for university students. Not a tutor/note app. It captures, remembers, organizes, schedules, and follows up on everything a student manages during a semester — so they never forget a class, assignment, deadline, meeting, or commitment. Must feel modern, minimal, fast, calm, intelligent, and keep the user in control.
 
