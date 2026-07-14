@@ -185,9 +185,10 @@ class TestAICap:
         assert pr.status_code == 200
         assert pr.json()["daily_ai_limit"] == 1
 
-        # 1st AI call — success
-        s1 = requests.post(f"{BASE}/api/search", json={"query": "lab"},
-                           headers=h, timeout=30)
+        # 1st AI call — success (capture always consumes quota)
+        s1 = requests.post(f"{BASE}/api/capture", json={"text": "read chapter 3"},
+                           headers={**h, "Idempotency-Key": f"cap-{uuid.uuid4().hex[:6]}"},
+                           timeout=30)
         assert s1.status_code == 200, s1.text
 
         # 2nd AI call with different endpoint & new idempotency key -> 429

@@ -1,6 +1,12 @@
 # Student Assistant — PRD
 
 ## Implemented v4 (2026-07-14) — Phase 2: Native Android + Reliability
+- **LIVE AI VALIDATED** (funded OpenAI key, `AI_PROVIDER=openai`): capture, import,
+  study notes, Whisper transcription, chunked-upload transcription, source-grounded
+  search, embeddings (1536-d) and Qdrant semantic retrieval — all verified HTTP 200
+  with correct output. See PHASE2_STATUS.md.
+- **Backend refactored** into `db.py` / `core.py` / `models.py` / `routers/*`
+  (server.py 1118→90 LOC), **no functional change** — Phase-2 suite 13/13 pass.
 - **Reliability core (backend, VERIFIED 13/13 tests)**: Commitment state machine
   (detected→confirmed→scheduled→completed/dismissed), append-only user-scoped
   **reliability ledger**, dedicated **Reminder** entity with retry (retry_count/

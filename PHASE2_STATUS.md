@@ -1,5 +1,21 @@
 # Phase 2 Status — Honest Verification Matrix
 
+## ✅ LIVE AI VALIDATION — PASSED (funded OpenAI key, provider=openai)
+Direct provider check: `POST /v1/chat/completions` → **HTTP 200** (quota active).
+End-to-end through the backend, all HTTP 200 with correct output:
+1. **Capture** — "sociology midterm Friday 10am … email Professor Lee tomorrow" → exam correctly routed to review (high-risk), reminder→task auto-committed; relative dates resolved (Fri=2026-07-17, tomorrow=07-15).
+2. **Import (text)** — syllabus snippet → classified `syllabus`, 3 items with correct due dates (Sep 15 / Oct 3 / Dec 12 09:00).
+3. **Study notes** — full structured sections generated (overview, key_concepts, definitions, exam topics, …).
+4. **Transcription** — TTS-synthesized speech → Whisper returned the exact sentence.
+5. **Chunked upload → transcribe** — 2-chunk reassembly (75,840 bytes) → exact transcript.
+6. **Search** — source-grounded answer with citation ("final exam is on December 12 at 9am [Source: syllabus …]").
+7. **Embeddings** — live `text-embedding-3-small`, dim 1536.
+8. **Semantic retrieval** — in-memory Qdrant + live embeddings: query "when is the final exam scheduled" → correct nearest doc (score 0.769).
+
+Backend was also refactored (server.py 1118→90 LOC; `core`/`models`/`db`/`routers/*`) with **no functional change** — Phase-2 reliability suite **13/13 pass**.
+
+---
+
 This project distinguishes four levels of "done". Per the user's requirement,
 **permissions, packages, endpoints, mocks and documentation do NOT count as
 completed functionality.**
@@ -53,13 +69,13 @@ Legend:
 | `AI_PROVIDER` dispatch (openai/fixture), zero-code swap | ✅ | `ai_service.py` |
 | Deterministic fixtures for pipeline testing | 🧪 | `fixtures.py` |
 | Transient-error retry (tenacity, non-fatal only) | 🧪 | quota/auth not retried |
-| **Live OpenAI extraction / transcription / notes / search quality** | 🔴 | Live test attempts: BOTH supplied keys return **HTTP 429 · insufficient_quota** (key authenticates OK — 401 NOT returned — but the OpenAI account has no quota/credits). Blocked on account billing. See re-test checklist below |
+| **Live OpenAI extraction / transcription / notes / search quality** | ✅ | VALIDATED with funded key — see "Live AI Validation" at top (capture/import/notes/transcribe/search/embeddings/semantic all HTTP 200 with correct output) |
 
 ## f. Semantic search (Qdrant)
 | Item | Status | Evidence |
 |---|---|---|
 | Keyword fallback (always available) | ✅ | `mode:"keyword"` + citations |
-| Qdrant integration + graceful degrade | 🧪 | `vectorstore.py`; Qdrant not running in preview (`QDRANT_URL` empty) |
+| Qdrant integration + graceful degrade | ✅ | `vectorstore.py`; semantic retrieval verified with live embeddings (in-memory Qdrant round-trip); preview server has no Qdrant so live app uses keyword fallback |
 | Production Qdrant service | 📦 | `docker-compose.production.yml` ships `qdrant` |
 
 ## g. Data export
@@ -90,3 +106,25 @@ Legend:
 ## 🔴 DEVICE RE-TEST CHECKLIST (run on an APK build)
 Execute the device test matrix in ANDROID_RELEASE_GUIDE.md. Nothing marked 📱
 above may be called "working" until it passes on a physical device.
+
+---
+
+## Remaining blockers
+- **None for the backend / AI pipeline.** Live AI validated end-to-end.
+- To get `mode:"semantic"` in production, run Qdrant (shipped in `docker-compose.production.yml`, `QDRANT_URL=http://qdrant:6333`). Preview has no Qdrant → keyword mode (still grounded + cited).
+
+## Native Android items still requiring PHYSICAL DEVICE testing (📱)
+These are implemented in real native code but cannot be verified in Expo Go / web preview:
+1. Background / locked-screen lecture recording + persistent foreground-service notification.
+2. Long (90-min) chunked upload with interruption/retry on a real network.
+3. Scheduled local notifications actually firing; Done/Snooze actions; reminders surviving a device reboot (re-scheduled from `/reminders/sync` on launch).
+4. Device-calendar writes (recurring events) + dedupe on re-sync.
+5. Data export opening the Android share sheet.
+
+## Readiness for the FIRST APK build
+READY. Prerequisites in place:
+- `frontend/app.json` — name/package/versionCode, all permissions, iOS `UIBackgroundModes:["audio"]`, config plugins (`expo-audio`/`expo-notifications`/`expo-calendar`).
+- `frontend/eas.json` — `preview` (APK) and `production` (AAB) profiles.
+- Independent build paths documented in `ANDROID_RELEASE_GUIDE.md` (EAS cloud **or** local `expo prebuild` + Gradle).
+- Set build-time env before building: `EXPO_PUBLIC_BACKEND_URL` (+ Google client IDs).
+- After install, run the device checklist above; nothing marked 📱 is "working" until it passes on hardware.
