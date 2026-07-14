@@ -6,9 +6,11 @@ import { Feather } from "@expo/vector-icons";
 import { C, S, R, F } from "@/src/theme";
 import { api } from "@/src/api";
 import { Card, SectionTitle, Btn, Badge } from "@/src/components/ui";
+import { useAuth } from "@/src/auth";
 
 export default function Profile() {
   const insets = useSafeAreaInsets();
+  const { signOut, deleteAccount, user } = useAuth();
   const [wr, setWr] = useState<any>(null);
   const [loadingWr, setLoadingWr] = useState(false);
 
@@ -23,9 +25,9 @@ export default function Profile() {
     Alert.alert("Data ready", `Your data: ${d.tasks.length} tasks, ${d.events.length} events, ${d.notes.length} notes, ${d.timeline.length} timeline entries. In a build this exports to a file.`);
   };
   const wipe = () => {
-    Alert.alert("Delete everything?", "This permanently removes all recordings, notes, tasks and calendar data.", [
+    Alert.alert("Delete your account?", "This permanently deletes ALL your data — recordings, transcripts, notes, tasks, events, imports and memory. This cannot be undone.", [
       { text: "Cancel", style: "cancel" },
-      { text: "Delete all", style: "destructive", onPress: async () => { await api.del("/wipe"); loadWeekly(); } },
+      { text: "Delete account", style: "destructive", onPress: async () => { await deleteAccount(); } },
     ]);
   };
 
@@ -34,7 +36,7 @@ export default function Profile() {
     <View style={styles.root}>
       <ScrollView contentContainerStyle={{ padding: S.lg, paddingTop: insets.top + S.lg, paddingBottom: 120 }} showsVerticalScrollIndicator={false}>
         <Text style={styles.title}>Settings</Text>
-        <Text style={styles.sub}>Weekly review, privacy & your data</Text>
+        <Text style={styles.sub}>{user?.email ? `Signed in as ${user.email}` : "Weekly review, privacy & your data"}</Text>
 
         <View style={{ marginTop: S.xl }}>
           <SectionTitle>Weekly review</SectionTitle>
@@ -65,7 +67,9 @@ export default function Profile() {
           <View style={{ height: S.md }} />
           <Btn label="Export my data" variant="soft" icon="download" onPress={exportData} testID="export-btn" />
           <View style={{ height: S.sm }} />
-          <Btn label="Delete all my data" variant="ghost" icon="trash-2" onPress={wipe} testID="wipe-btn" />
+          <Btn label="Sign out" variant="ghost" icon="log-out" onPress={signOut} testID="signout-btn" />
+          <View style={{ height: S.sm }} />
+          <Btn label="Delete my account" variant="ghost" icon="trash-2" onPress={wipe} testID="wipe-btn" />
         </View>
       </ScrollView>
     </View>

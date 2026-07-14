@@ -1,0 +1,41 @@
+{
+  "summary": "Backend production-hardening tests (v3) executed. 32/32 pytest tests PASS covering: health, auth (unauth 401s, dev-login, /me, refresh rotation, logout revocation), cross-user data isolation (tasks/events/sources/export/courses across two dev-login users), security (public /wipe removed, DELETE /me deletes+revokes sessions, oversized import 413, /auth/dev-login rate-limits to 429), AI-degradation to clean 503 (capture, import, notes/generate, transcribe) and non-AI CRUD (tasks incl. patch to done, events, briefing structure, courses+detail, timeline filters, evening-review, weekly-review, prefs GET/PUT). AI is NOT configured (OPENAI_API_KEY empty) — behavior matches spec.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "DELETE /api/tasks/{tid} and /api/events/{eid}", "issue": "Return 200 {ok:true} even when the resource does not exist or belongs to another user. No security leak (user_id filter enforced) but clients cannot distinguish success from silent no-op. Consider returning 404 when matched_count == 0."},
+      {"endpoint": "POST /api/search", "issue": "When no user chunks match the query, returns 200 with a hard-coded fallback message without invoking AI. This is fine, but as a side-effect the AI-503 path for /search is only reachable after data has been ingested via /capture, /import, /notes or /transcribe — none of which work without OPENAI_API_KEY. Effectively /search cannot be exercised end-to-end in this env."},
+      {"endpoint": "In-memory rate limiter", "issue": "Uses per-process defaultdict keyed by request.client.host. Behind multi-pod ingress each pod has its own counter, so effective limit ≈ N×limit. Works for basic abuse control but noted for prod scaling — move to Redis-backed limiter."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_v3_hardening.py",
+    "/app/test_reports/pytest/v3_results.xml"
+  ],
+  "action_items": [
+    "Optional: return 404 from DELETE /tasks/{tid} and /events/{eid} when matched_count == 0 for clearer client semantics.",
+    "Optional: swap in-memory rate limiter for a Redis/shared store implementation before production scale-out.",
+    "To fully exercise AI endpoints, set OPENAI_API_KEY in /app/backend/.env — expected behavior in current run is 503, which is correct."
+  ],
+  "critical_code_review_comments": [
+    "server.py is ~765 lines and mixes helpers, auth routes, CRUD and AI orchestration. Consider splitting into routers (auth.py routes, tasks_router.py, events_router.py, ai_router.py, briefing.py) for maintainability (>700 line threshold).",
+    "Global AsyncOpenAI _client is cached in ai_service.py; when OPENAI_API_KEY is later set at runtime, the cached None-path still raises AIError first request — that's fine since key is env-var only at startup. Just note documentation.",
+    "config.validate() logs a warning at import but does not fail startup. Acceptable for dev, but for prod hardening consider raising in server.py startup when JWT_SECRET is a dev placeholder AND ALLOW_INSECURE_DEV=false.",
+    "JWT_SECRET currently reads 'dev-only-change-me-...' — validate() accepts it because it's >=16 chars. Add a check to reject known-placeholder strings for production."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_v3_hardening.py (new)"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "N/A (backend-only run)"},
+  "seed_data_creation": "Test-created users are prefixed TEST_user_a_/TEST_user_b_/TEST_refresh_/TEST_logout_/TEST_delete_/TEST_rl_. Test tasks/events are TEST_-prefixed. DELETE /me tests self-clean their data.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Use POST /api/auth/dev-login with any email to get JWTs (ALLOW_INSECURE_DEV=true). BASE URL: https://semester-sync-7.preview.emergentagent.com. All AI endpoints return 503 by design (OPENAI_API_KEY empty). Rate-limit test resets require ~60s between runs; the test itself fires 120 requests with Connection:close to trip at least one pod. Full suite runs in ~17s from a cold-window state.",
+  "rca_of_issue": "No open issues. Initial rate-limit test flake was caused by requests.Session keep-alive + multi-pod ingress each keeping its own in-memory counter (~40/pod/min). Resolved by firing enough non-persistent requests (120) to saturate any single pod's window."
+}

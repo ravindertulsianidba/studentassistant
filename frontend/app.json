@@ -1,16 +1,17 @@
 {
   "expo": {
-    "name": "frontend",
+    "name": "Student Assistant",
     "slug": "frontend",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "frontend",
+    "scheme": "studentassistant",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.emergent.semestersync.yal1jz",
+      "buildNumber": "1",
+      "bundleIdentifier": "com.ravindertulsiani.studentassistant",
       "infoPlist": {
         "NSCameraUsageDescription": "Scan your schedule and syllabus to capture deadlines",
         "NSPhotoLibraryUsageDescription": "Import screenshots of schedules and emails",
@@ -20,11 +21,21 @@
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#000000"
+        "backgroundColor": "#4F6B58"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.emergent.semestersync.yal1jz",
-      "permissions": ["CAMERA", "RECORD_AUDIO", "READ_MEDIA_IMAGES"]
+      "versionCode": 1,
+      "package": "com.ravindertulsiani.studentassistant",
+      "permissions": [
+        "CAMERA",
+        "RECORD_AUDIO",
+        "READ_MEDIA_IMAGES",
+        "POST_NOTIFICATIONS",
+        "FOREGROUND_SERVICE",
+        "FOREGROUND_SERVICE_MICROPHONE",
+        "READ_CALENDAR",
+        "WRITE_CALENDAR"
+      ]
     },
     "web": {
       "bundler": "metro",
@@ -42,7 +53,8 @@
           "backgroundColor": "#000000"
         }
       ],
-      "expo-audio"
+      "expo-audio",
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true

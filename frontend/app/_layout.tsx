@@ -1,4 +1,4 @@
-import { Stack } from "expo-router";
+import { Stack, useRouter, useSegments } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { useEffect } from "react";
 import { LogBox } from "react-native";
@@ -7,6 +7,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { useFonts } from "expo-font";
 
 import { useIconFonts } from "@/src/hooks/use-icon-fonts";
+import { AuthProvider, useAuth } from "@/src/auth";
 
 // Disable logbox errors etc so that users can see the app
 // and agent works as expected.
@@ -18,6 +19,34 @@ LogBox.ignoreAllLogs(true);
 // the family is registered — which throws on Android Expo Go.
 SplashScreen.preventAutoHideAsync();
 
+function RootNav() {
+  const { ready, user } = useAuth();
+  const segments = useSegments();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (!ready) return;
+    SplashScreen.hideAsync();
+    const inLogin = segments[0] === "login";
+    if (!user && !inLogin) router.replace("/login");
+    else if (user && inLogin) router.replace("/(tabs)");
+  }, [ready, user, segments]);
+
+  if (!ready) return null;
+
+  return (
+    <Stack screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="login" />
+      <Stack.Screen name="(tabs)" />
+      <Stack.Screen name="quick-capture" options={{ presentation: "modal" }} />
+      <Stack.Screen name="notes" options={{ presentation: "modal" }} />
+      <Stack.Screen name="search" options={{ presentation: "modal" }} />
+      <Stack.Screen name="inbox" options={{ presentation: "modal" }} />
+      <Stack.Screen name="course/[name]" options={{ presentation: "modal" }} />
+    </Stack>
+  );
+}
+
 export default function RootLayout() {
   const [iconsLoaded, iconErr] = useIconFonts();
   const [fontsLoaded, fontErr] = useFonts({
@@ -28,25 +57,15 @@ export default function RootLayout() {
     "Manrope-Bold": require("../assets/fonts/Manrope-Bold.ttf"),
   });
 
-  const ready = (iconsLoaded || iconErr) && (fontsLoaded || fontErr);
-
-  useEffect(() => {
-    if (ready) SplashScreen.hideAsync();
-  }, [ready]);
-
-  if (!ready) return null;
+  const fontsReady = (iconsLoaded || iconErr) && (fontsLoaded || fontErr);
+  if (!fontsReady) return null;
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
-        <Stack screenOptions={{ headerShown: false }}>
-          <Stack.Screen name="(tabs)" />
-          <Stack.Screen name="quick-capture" options={{ presentation: "modal" }} />
-          <Stack.Screen name="inbox" options={{ presentation: "modal" }} />
-          <Stack.Screen name="course/[name]" options={{ presentation: "modal" }} />
-          <Stack.Screen name="notes" options={{ presentation: "modal" }} />
-          <Stack.Screen name="search" options={{ presentation: "modal" }} />
-        </Stack>
+        <AuthProvider>
+          <RootNav />
+        </AuthProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );
