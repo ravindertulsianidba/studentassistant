@@ -8,7 +8,7 @@ import { C, F, shadow } from "@/src/theme";
 function CaptureButton({ bottom }: { bottom: number }) {
   const router = useRouter();
   return (
-    <View style={[styles.fabWrap, { pointerEvents: "box-none" }]}>
+    <View style={styles.fabWrap} pointerEvents="box-none">
       <Pressable
         testID="capture-fab"
         onPress={() => {
