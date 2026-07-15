@@ -10,6 +10,7 @@ import logging
 from email.message import EmailMessage
 
 import aiosmtplib
+from fastapi import HTTPException
 
 import config
 
@@ -60,4 +61,22 @@ class MockMailer:
             self.sent = self.sent[-200:]
 
 
-mailer: SmtpMailer | MockMailer = SmtpMailer() if smtp_configured() else MockMailer()
+class UnconfiguredMailer:
+    """Used in production when SMTP is not configured. Fails safely instead of
+    silently pretending to send (never falls back to MockMailer in production)."""
+    is_mock = False
+
+    async def send(self, to: str, subject: str, text: str, html: str | None = None):
+        logger.error("SMTP is not configured; refusing to send email to %s", to)
+        raise HTTPException(status_code=503,
+                            detail="Email delivery is temporarily unavailable. Please try again later.")
+
+
+# Selection: real SMTP if configured; else MockMailer ONLY in dev (ALLOW_INSECURE_DEV);
+# otherwise UnconfiguredMailer which fails safely in production.
+if smtp_configured():
+    mailer: SmtpMailer | MockMailer | UnconfiguredMailer = SmtpMailer()
+elif config.ALLOW_INSECURE_DEV:
+    mailer = MockMailer()
+else:
+    mailer = UnconfiguredMailer()

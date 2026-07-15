@@ -24,7 +24,7 @@ type AuthCtx = {
   devSignIn: (email: string) => Promise<void>;
   signOut: () => Promise<void>;
   revokeAllSessions: () => Promise<void>;
-  deleteAccount: () => Promise<void>;
+  deleteAccount: (password?: string) => Promise<void>;
 };
 
 const Ctx = createContext<AuthCtx>({} as AuthCtx);
@@ -106,8 +106,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try { await api.post("/auth/logout-all", {}); } catch {}
     await signOut();
   };
-  const deleteAccount = async () => {
-    try { await api.del("/me"); } catch {}
+  const deleteAccount = async (password?: string) => {
+    await api.del("/me", password ? { password } : undefined);
     await signOut();
   };
 

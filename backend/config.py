@@ -68,4 +68,9 @@ def validate() -> list[str]:
         missing.append("GOOGLE_CLIENT_ID (or set ALLOW_INSECURE_DEV=true for dev)")
     if not CORS_ORIGINS:
         missing.append("CORS_ORIGINS")
+    # In production, email delivery must be really configured (no silent mock).
+    def _ph(v: str) -> bool:
+        return (not v) or v.strip().startswith("[ADD_")
+    if not ALLOW_INSECURE_DEV and (_ph(SMTP_HOST) or _ph(SMTP_FROM_EMAIL)):
+        missing.append("SMTP_HOST/SMTP_FROM_EMAIL (email delivery required in production)")
     return missing

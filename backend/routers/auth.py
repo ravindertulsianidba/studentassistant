@@ -20,7 +20,7 @@ from core import (now_iso, clean, _parse_dt, normalize, token_overlap, rate_limi
     is_high_risk, route_item, find_related, commit_item, build_review, route_items,
     CurrentUser, logger, _issue_session, _upsert_user)
 from models import (GoogleIn, DevLoginIn, RefreshIn, RegisterIn, LoginIn, VerifyEmailIn,
-    ResendVerificationIn, ForgotPasswordIn, ResetPasswordIn,
+    ResendVerificationIn, ForgotPasswordIn, ResetPasswordIn, DeleteAccountIn,
     CaptureIn, ImportIn, NotesIn, SearchIn, TaskIn, EventIn, ReviewActionIn, ReminderIn, ReminderStatusIn, CalendarSyncIn)
 
 router = APIRouter(prefix="/api")
@@ -322,10 +322,17 @@ async def me(uid: str = CurrentUser):
     return u
 
 @router.delete("/me")
-async def delete_account(uid: str = CurrentUser):
+async def delete_account(body: DeleteAccountIn | None = None, uid: str = CurrentUser):
+    # Re-authentication safeguard: password accounts must confirm their password.
+    u = await db.users.find_one({"id": uid})
+    if u and u.get("password_hash"):
+        pw = (body.password if body else None) or ""
+        if not pw or not security.verify_password(pw, u["password_hash"]):
+            raise HTTPException(status_code=403, detail="Please confirm your password to delete your account.")
     for c in ["tasks", "events", "timeline", "review", "imports", "notes", "chunks",
               "audit", "prefs", "source_docs", "transcripts", "refresh_tokens",
-              "commitments", "ledger", "reminders", "idempotency", "ai_usage", "uploads"]:
+              "commitments", "ledger", "reminders", "idempotency", "ai_usage", "uploads",
+              "calendar_connection", "calendar_links", "external_events"]:
         await db[c].delete_many({"user_id": uid})
     await db.users.delete_one({"id": uid})
     return {"ok": True, "deleted": True}

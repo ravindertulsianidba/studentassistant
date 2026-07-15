@@ -21,6 +21,9 @@ export default function Profile() {
   const [capInput, setCapInput] = useState("");
   const [notif, setNotif] = useState<any>(null);
   const [busy, setBusy] = useState("");
+  const [askDelPw, setAskDelPw] = useState(false);
+  const [delPw, setDelPw] = useState("");
+  const [delErr, setDelErr] = useState("");
 
   const load = useCallback(async () => {
     setLoadingWr(true);
@@ -88,10 +91,17 @@ export default function Profile() {
   };
 
   const wipe = () => {
+    if ((user as any)?.auth_provider === "password") { setAskDelPw(true); return; }
     Alert.alert("Delete your account?", "This permanently deletes ALL your data — recordings, transcripts, notes, tasks, events, imports and memory. This cannot be undone.", [
       { text: "Cancel", style: "cancel" },
       { text: "Delete account", style: "destructive", onPress: async () => { await deleteAccount(); } },
     ]);
+  };
+
+  const confirmDeletePw = async () => {
+    setDelErr("");
+    try { await deleteAccount(delPw); }
+    catch (e: any) { setDelErr(e.message || "Incorrect password."); }
   };
 
   const revokeAll = () => {
@@ -160,6 +170,15 @@ export default function Profile() {
           <Btn label="Sign out of all devices" variant="ghost" icon="shield-off" onPress={revokeAll} testID="revoke-all-btn" />
           <View style={{ height: S.sm }} />
           <Btn label="Delete my account" variant="ghost" icon="trash-2" onPress={wipe} testID="wipe-btn" />
+          {askDelPw ? (
+            <Card style={{ gap: S.sm, marginTop: S.sm }}>
+              <Text style={styles.body}>Confirm your password to permanently delete your account.</Text>
+              {delErr ? <Text style={{ fontFamily: F.bodyMed, fontSize: 13, color: C.error }}>{delErr}</Text> : null}
+              <TextInput style={styles.capInput} placeholder="Password" placeholderTextColor={C.onSurface3}
+                secureTextEntry autoCapitalize="none" value={delPw} onChangeText={setDelPw} testID="del-password" />
+              <Btn label="Confirm delete" variant="ghost" icon="trash-2" onPress={confirmDeletePw} testID="confirm-del-btn" />
+            </Card>
+          ) : null}
         </View>
 
         <View style={{ marginTop: S.xl }}>

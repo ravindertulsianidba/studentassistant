@@ -33,6 +33,10 @@ class ResetPasswordIn(BaseModel):
     password: str
 
 
+class DeleteAccountIn(BaseModel):
+    password: Optional[str] = None
+
+
 class DevLoginIn(BaseModel):
     email: str
 

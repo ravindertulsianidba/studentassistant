@@ -44,7 +44,7 @@ export const api = {
   get: (p: string) => req(p),
   post: (p: string, body?: any) => req(p, { method: "POST", body: JSON.stringify(body || {}) }),
   patch: (p: string, body?: any) => req(p, { method: "PATCH", body: JSON.stringify(body || {}) }),
-  del: (p: string) => req(p, { method: "DELETE" }),
+  del: (p: string, body?: any) => req(p, { method: "DELETE", body: body ? JSON.stringify(body) : undefined }),
   // raw fetch with auth header (for multipart uploads)
   authHeader: () => (accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
 };
