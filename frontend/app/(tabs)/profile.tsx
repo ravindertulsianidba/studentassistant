@@ -1,7 +1,7 @@
 import { useState, useCallback } from "react";
 import { View, Text, StyleSheet, ScrollView, Alert, TextInput, Platform } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useFocusEffect } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import { Feather } from "@expo/vector-icons";
 import * as Sharing from "expo-sharing";
 import { File, Paths } from "expo-file-system";
@@ -10,7 +10,6 @@ import { api } from "@/src/api";
 import { Card, SectionTitle, Btn, Badge } from "@/src/components/ui";
 import { useAuth } from "@/src/auth";
 import { ensurePermission as notifPerm, syncAndSchedule, health as notifHealth } from "@/src/services/notifications";
-import { syncPending as calSync } from "@/src/services/calendar";
 
 export default function Profile() {
   const insets = useSafeAreaInsets();
@@ -52,16 +51,8 @@ export default function Profile() {
     finally { setBusy(""); }
   };
 
-  const syncCalendar = async () => {
-    setBusy("cal");
-    try {
-      const r = await calSync();
-      Alert.alert("Calendar sync",
-        Platform.OS === "web" ? "Calendar writes work in the installed app, not the web preview."
-          : `Added ${r.created} event(s). ${r.failed ? r.failed + " failed. " : ""}${r.skipped ? r.skipped + " skipped (no date)." : ""}`);
-    } catch (e: any) { Alert.alert("Calendar sync failed", e?.message || "Try again."); }
-    finally { setBusy(""); }
-  };
+  const router = useRouter();
+
 
   const saveCap = async () => {
     const n = parseInt(capInput, 10);
@@ -130,10 +121,10 @@ export default function Profile() {
         </View>
 
         <View style={{ marginTop: S.xl }}>
-          <SectionTitle>Device calendar</SectionTitle>
+          <SectionTitle>Calendar</SectionTitle>
           <Card style={{ gap: S.md }}>
-            <Text style={styles.body}>Add your classes and deadlines to your phone's calendar. Duplicates are avoided automatically.</Text>
-            <Btn label="Sync to device calendar" variant="soft" icon="calendar" onPress={syncCalendar} testID="cal-btn" />
+            <Text style={styles.body}>Connect the calendar you already use (Google, Microsoft 365, Outlook, Exchange, and others synced to your device). External events appear in Today and drive conflict detection; approved events sync back to your calendar.</Text>
+            <Btn label="Connect Calendar" variant="soft" icon="calendar" onPress={() => router.push("/calendar-connect")} testID="cal-btn" />
           </Card>
         </View>
 

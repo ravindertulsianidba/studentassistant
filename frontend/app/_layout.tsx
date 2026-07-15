@@ -9,6 +9,7 @@ import { useFonts } from "expo-font";
 import { useIconFonts } from "@/src/hooks/use-icon-fonts";
 import { AuthProvider, useAuth } from "@/src/auth";
 import { wireHandlers, syncAndSchedule } from "@/src/services/notifications";
+import { fullSync as calendarFullSync } from "@/src/services/calendar";
 
 // Disable logbox errors etc so that users can see the app
 // and agent works as expected.
@@ -28,7 +29,10 @@ function RootNav() {
   useEffect(() => { wireHandlers(); }, []);
 
   useEffect(() => {
-    if (user) { syncAndSchedule().catch(() => {}); }
+    if (user) {
+      syncAndSchedule().catch(() => {});
+      calendarFullSync().catch(() => {});
+    }
   }, [user]);
 
   useEffect(() => {
@@ -51,6 +55,7 @@ function RootNav() {
       <Stack.Screen name="reset-password" />
       <Stack.Screen name="onboarding" />
       <Stack.Screen name="(tabs)" />
+      <Stack.Screen name="calendar-connect" options={{ presentation: "modal" }} />
       <Stack.Screen name="quick-capture" options={{ presentation: "modal" }} />
       <Stack.Screen name="notes" options={{ presentation: "modal" }} />
       <Stack.Screen name="record" options={{ presentation: "modal" }} />

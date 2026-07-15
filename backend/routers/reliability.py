@@ -83,34 +83,8 @@ async def reminders_health(uid: str = CurrentUser):
         counts[st] = await db.reminders.count_documents({"user_id": uid, "status": st})
     return {"counts": counts, "server_time": now_iso()}
 
-# ================= NATIVE CALENDAR SYNC MAPPING =================
-
-@router.get("/calendar/pending")
-async def calendar_pending(uid: str = CurrentUser):
-    """Events not yet written to the device calendar (external_id is null)."""
-    docs = await db.events.find({"user_id": uid, "external_id": None}, {"_id": 0}).to_list(500)
-    return docs
-
-@router.post("/calendar/sync")
-async def calendar_sync(inp: CalendarSyncIn, uid: str = CurrentUser):
-    synced = 0
-    for our_id, ext_id in inp.mappings.items():
-        r = await db.events.update_one(
-            {"id": our_id, "user_id": uid},
-            {"$set": {"external_id": ext_id, "synced_at": now_iso()}})
-        if r.matched_count:
-            synced += 1
-            await rel.log(db, uid, "calendar_synced", entity_type="event", entity_id=our_id,
-                          actor="device", detail=f"ext={ext_id}")
-    return {"ok": True, "synced": synced}
-
-@router.post("/calendar/unlink/{eid}")
-async def calendar_unlink(eid: str, uid: str = CurrentUser):
-    """Failure recovery: device reports the external event vanished/failed."""
-    await db.events.update_one({"id": eid, "user_id": uid},
-                               {"$set": {"external_id": None, "synced_at": None}})
-    await rel.log(db, uid, "calendar_unlinked", entity_type="event", entity_id=eid, actor="device")
-    return {"ok": True}
+# ================= NATIVE CALENDAR SYNC =================
+# Moved to routers/calendar.py (Phase 3B: provider-neutral two-way sync).
 
 # ================= CHUNKED / RESUMABLE AUDIO UPLOAD =================
 @router.post("/uploads/init")

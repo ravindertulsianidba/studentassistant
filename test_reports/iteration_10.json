@@ -1,0 +1,31 @@
+{
+  "summary": "Phase 3B — provider-neutral calendar integration: 24/24 backend tests PASSED against the public preview URL. Verified: connection PUT/GET with access_mode (read_write→'connected', read_only→'read_only', invalid→422); /calendar/pending gated correctly (empty when disconnected or read_only, populated when read_write); /calendar/sync links internal↔external, creates calendar_links, removes item from pending, and is idempotent on repeat; /calendar/external/ingest auto-applies title-only edits on non-high-risk study events, queues external_edit review for time changes without mutating the internal event, and queues review for ANY edit on recurring or exam events; /calendar/review/{id} approve applies pending changes, dismiss leaves them; deletion-detection via window creates external_delete review and approval removes the internal event + link; non-SA externals stored in mirror with is_sa=false and never spawn tasks; /calendar/status handles permission_revoked (disconnect), sync_failed with failure_reason persisted, and 422 on invalid status; /briefing?tz_offset_min=0 includes external today with external=true, avoids duplicating SA-linked events, surfaces 'Schedule conflict' risk on overlapping timed events, and adds stats.external_today + stats.calendar_review; two-user isolation confirmed (User B sees no A connection/links/mirror/reviews); regression on tasks/events CRUD + /briefing + /timeline + /reminders all 200; DELETE /me returns 200 for dev-login accounts without password, 403 for password accounts without/with wrong password, and 200 with correct password. No React Native issues to report — this run was backend-only per request.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": [], "react_native_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_calendar_phase3b.py",
+    "/app/test_reports/pytest/calendar_phase3b.xml"
+  ],
+  "action_items": [
+    "None blocking — Phase 3B backend is spec-complete. Device-side flows (expo-calendar reads/writes, provider sync) remain DEVICE-ONLY and MUST NOT be treated as passed based on API tests alone; verify on a native build.",
+    "Reminder: the in-memory rate limiter may 429 with rapid repeated /auth/register calls on the same host — the DELETE /me password-account test skips gracefully when it does."
+  ],
+  "critical_code_review_comments": [
+    "routers/calendar.py:_is_high_risk_event correctly flags recurring OR event_type=='exam'; ingest branches on this OR any start/end change → matches the 'title-only auto, time/high-risk requires confirmation' spec.",
+    "/calendar/sync uses (user_id, internal_id) key on calendar_links with $set upsert → repeated syncs are idempotent (no duplicate link, no error). Confirmed in test_sync_links_event_and_removes_from_pending.",
+    "/calendar/pending returns [] unless connected AND access_mode=='read_write' — matches spec exactly.",
+    "/briefing correctly excludes is_sa externals from the external_today merge to prevent duplicates, and inserts calendar_review count as an error-level risk (nice UX signal).",
+    "DELETE /me safeguard in routers/auth.py checks users.password_hash presence and requires a valid password verify — dev-login accounts (no password_hash) bypass as expected.",
+    "Minor: routers/calendar.py external ingest updates db.audit with a 'new' field that only stores ev.title even when the change is start/end — cosmetic, doesn't affect correctness; consider serialising the full change dict.",
+    "Minor: /calendar/pending includes ALL unlinked events (even those without a start/end). The current filter drops entries missing 'start', which is fine, but recurring-approval gating relies on 'events not in db.review' being an invariant — worth an explicit comment/test if that ever changes."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_calendar_phase3b.py (new — Phase 3B backend suite, 24 tests)"
+  ],
+  "success_rate": {"backend": "100% (24/24)", "frontend": "not_tested (backend-only request)"},
+  "seed_data_creation": "Each test class opens fresh throwaway dev-login sessions (TEST_<slug>_<uuid8>@example.com). The password-account deletion test registers TEST_pw_<uuid8>@uni.edu, verifies via /auth/dev-outbox, and deletes itself at the end. No persistent seed data left behind beyond user rows those create (which the DELETE /me test also cleans up).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Phase 3B backend is fully green against the public preview URL. Real device-calendar operations (expo-calendar) and actual Google/Microsoft-on-Android sync are DEVICE-ONLY — do NOT mark them passed from API-only runs. When re-running the auth-heavy DELETE /me test on the same host in quick succession, expect occasional 429 (in-memory rate limiter); the suite already `pytest.skip`s in that case. The dev-outbox lowercases the recipient email — match case-insensitively when parsing tokens.",
+  "rca_of_issue": "N/A — no bugs found. One transient test-code miss (case-sensitive email compare against dev-outbox) was fixed in the suite itself before finalising."
+}

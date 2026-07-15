@@ -109,3 +109,47 @@ class ReminderStatusIn(BaseModel):
 class CalendarSyncIn(BaseModel):
     # device reports the OS-calendar event id it created for each of our event ids
     mappings: Dict[str, str]
+
+
+class CalendarConnectionIn(BaseModel):
+    calendar_id: str
+    calendar_title: Optional[str] = None
+    account_name: Optional[str] = None
+    provider: Optional[str] = None          # google | microsoft | exchange | local | other
+    access_mode: str = "read_write"          # read_write | read_only
+
+
+class CalendarStatusIn(BaseModel):
+    status: str  # connected | read_only | syncing | sync_failed | permission_revoked | disconnected
+    failure_reason: Optional[str] = None
+
+
+class CalendarLinkIn(BaseModel):
+    internal_id: str
+    external_id: str
+    device_calendar_id: Optional[str] = None
+    provider: Optional[str] = None
+    account_name: Optional[str] = None
+    sync_direction: str = "two_way"          # outbound | inbound | two_way
+
+
+class ExternalEventIn(BaseModel):
+    external_id: str
+    device_calendar_id: Optional[str] = None
+    title: Optional[str] = None
+    start: Optional[str] = None
+    end: Optional[str] = None
+    all_day: bool = False
+    location: Optional[str] = None
+    recurring: bool = False
+
+
+class ExternalIngestIn(BaseModel):
+    device_calendar_id: Optional[str] = None
+    window_start: Optional[str] = None
+    window_end: Optional[str] = None
+    events: List[ExternalEventIn] = []
+
+
+class CalendarReviewActionIn(BaseModel):
+    approve: bool

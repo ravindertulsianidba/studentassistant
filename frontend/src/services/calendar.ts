@@ -56,7 +56,9 @@ export async function syncPending(): Promise<{ created: number; failed: number; 
   if (!isDevice) return { created: 0, failed: 0, skipped: 0 };
   const perm = await ensurePermission();
   if (!perm.granted) return { created: 0, failed: 0, skipped: 0 };
-  const calId = await getOrCreateCalendar();
+  const conn = await api.get("/calendar/connection").catch(() => null);
+  if (!conn?.connected || conn.access_mode !== "read_write") return { created: 0, failed: 0, skipped: 0 };
+  const calId = conn.calendar_id || (await getOrCreateCalendar());
   const pending = await api.get("/calendar/pending");
   const mappings: Record<string, string> = {};
   let created = 0, failed = 0, skipped = 0;
@@ -70,7 +72,6 @@ export async function syncPending(): Promise<{ created: number; failed: number; 
         location: ev.location || undefined, notes: ev.notes || undefined,
         timeZone: undefined, recurrenceRule: recurrenceFor(ev),
       });
-      // verify the write actually persisted
       const back = await Calendar.getEventAsync(extId).catch(() => null);
       if (back) { mappings[ev.id] = extId; created++; }
       else { failed++; }
@@ -83,3 +84,96 @@ export async function syncPending(): Promise<{ created: number; failed: number; 
   }
   return { created, failed, skipped };
 }
+
+// ---------------- Phase 3B: provider-neutral connect + two-way sync ----------------
+
+function inferProvider(src: any): string {
+  const s = `${src?.type || ""} ${src?.name || ""}`.toLowerCase();
+  if (s.includes("google") || s.includes("gmail")) return "google";
+  if (s.includes("exchange") || s.includes("office365") || s.includes("microsoft") || s.includes("outlook")) return "microsoft";
+  if (s.includes("caldav")) return "caldav";
+  if (s.includes("local")) return "local";
+  return src?.name || "other";
+}
+
+export type DeviceCalendar = {
+  id: string; title: string; account: string; provider: string; allowsModifications: boolean;
+};
+
+/** Lists calendars from the device calendar provider (includes Google / Microsoft 365 /
+ *  Outlook / Exchange calendars synced to the device). */
+export async function listCalendars(): Promise<DeviceCalendar[]> {
+  if (!isDevice) return [];
+  const perm = await ensurePermission();
+  if (!perm.granted) return [];
+  const cals = await Calendar.getCalendarsAsync(Calendar.EntityTypes.EVENT);
+  return cals.map((c: any) => ({
+    id: c.id,
+    title: c.title || "Calendar",
+    account: c.source?.name || c.ownerAccount || "Device",
+    provider: inferProvider(c.source),
+    allowsModifications: !!c.allowsModifications,
+  }));
+}
+
+export async function getConnection() {
+  try { return await api.get("/calendar/connection"); } catch { return null; }
+}
+
+export async function connect(cal: DeviceCalendar, accessMode: "read_write" | "read_only") {
+  const mode = accessMode === "read_write" && !cal.allowsModifications ? "read_only" : accessMode;
+  await api.post("/calendar/connection", {
+    calendar_id: cal.id, calendar_title: cal.title, account_name: cal.account,
+    provider: cal.provider, access_mode: mode,
+  });
+  await fullSync();
+  return mode;
+}
+
+export async function disconnect() { try { await api.post("/calendar/disconnect", {}); } catch {} }
+
+async function reportStatus(status: string, failure_reason?: string) {
+  try { await api.post("/calendar/status", { status, failure_reason }); } catch {}
+}
+
+/** Reads external events in a ±35-day window from the connected calendar and mirrors
+ *  them to the server for awareness/conflict + reconciliation. */
+async function readAndIngest(calId: string) {
+  const now = Date.now();
+  const start = new Date(now - 35 * 864e5);
+  const end = new Date(now + 35 * 864e5);
+  const evs = await Calendar.getEventsAsync([calId], start, end).catch(() => []);
+  const events = (evs || []).map((e: any) => ({
+    external_id: e.id, device_calendar_id: calId, title: e.title,
+    start: e.startDate ? new Date(e.startDate).toISOString() : null,
+    end: e.endDate ? new Date(e.endDate).toISOString() : null,
+    all_day: !!e.allDay, location: e.location || null, recurring: !!e.recurrenceRule,
+  }));
+  await api.post("/calendar/external/ingest", {
+    device_calendar_id: calId, window_start: start.toISOString(),
+    window_end: end.toISOString(), events,
+  });
+}
+
+/** Orchestrates a full two-way sync. Safe on web/non-device (no-op). Never fails silently:
+ *  status is reported back to the server (Connected / Read only / Syncing / Sync failed /
+ *  Permission revoked). */
+export async function fullSync(): Promise<{ ok: boolean; status: string }> {
+  if (!isDevice) return { ok: false, status: "unavailable" };
+  const conn = await getConnection();
+  if (!conn?.connected) return { ok: false, status: "disconnected" };
+  const cur = await Calendar.getCalendarPermissionsAsync();
+  if (!cur.granted) { await reportStatus("permission_revoked", "Calendar permission was revoked."); return { ok: false, status: "permission_revoked" }; }
+  await reportStatus("syncing");
+  try {
+    if (conn.calendar_id) await readAndIngest(conn.calendar_id);
+    if (conn.access_mode === "read_write") await syncPending();
+    const finalStatus = conn.access_mode === "read_only" ? "read_only" : "connected";
+    await reportStatus(finalStatus);
+    return { ok: true, status: finalStatus };
+  } catch (e: any) {
+    await reportStatus("sync_failed", String(e?.message || e).slice(0, 200));
+    return { ok: false, status: "sync_failed" };
+  }
+}
+

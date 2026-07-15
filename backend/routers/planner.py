@@ -192,6 +192,10 @@ async def briefing(tz_offset_min: int = 0, uid: str = CurrentUser):
     tasks = await db.tasks.find({"user_id": uid, "status": "open"}, {"_id": 0}).to_list(500)
     review_count = await db.review.count_documents({"user_id": uid, "status": "pending"})
     imports_count = await db.imports.count_documents({"user_id": uid})
+    # External (device-calendar) events mirrored for awareness. Exclude SA-linked ones
+    # (is_sa) so a two-way-linked event is never shown twice.
+    ext_all = await db.external_events.find(
+        {"user_id": uid, "deleted": {"$ne": True}, "is_sa": {"$ne": True}}, {"_id": 0}).to_list(1000)
 
     today_classes = []
     for e in events:
@@ -199,6 +203,20 @@ async def briefing(tz_offset_min: int = 0, uid: str = CurrentUser):
         recurs = e.get("recurring") and e.get("days") and wk in [x[:3] for x in e.get("days")]
         if ld == today or recurs:
             today_classes.append(e)
+
+    # External timed events for today (read-only awareness; never become tasks/memory).
+    external_today = []
+    for x in ext_all:
+        if ldate(x.get("start")) == today:
+            external_today.append({"id": x.get("external_id"), "title": x.get("title") or "Busy",
+                "event_type": "external", "start": x.get("start"), "end": x.get("end"),
+                "location": x.get("location"), "course": None, "external": True,
+                "provider": None})
+    external_today.sort(key=lambda e: e.get("start") or "9999")
+    # Merge into the schedule (SA events first, then external), de-duplicated by id.
+    seen_ids = {e.get("id") for e in today_classes}
+    schedule = today_classes + [e for e in external_today if e.get("id") not in seen_ids]
+    schedule.sort(key=lambda e: e.get("start") or "9999")
 
     # Reconcile tasks into due-today / overdue / upcoming (next 7 days, excluding today).
     # A task with a date but no time is due by end of that local day → date comparison handles it.
@@ -236,6 +254,20 @@ async def briefing(tz_offset_min: int = 0, uid: str = CurrentUser):
         risks.append({"level": "info", "text": "No syllabus imported — you may be missing deadlines"})
     if review_count:
         risks.append({"level": "warning", "text": f"{review_count} items in your AI Inbox"})
+    # Conflict detection across the merged schedule (SA + external timed events).
+    timed = [e for e in schedule if _parse_dt(e.get("start")) and _parse_dt(e.get("end"))]
+    timed.sort(key=lambda e: e["start"])
+    for i in range(len(timed) - 1):
+        a, b = timed[i], timed[i + 1]
+        if _parse_dt(b["start"]) < _parse_dt(a["end"]):
+            risks.insert(0, {"level": "warning",
+                "text": f"Schedule conflict: '{a.get('title')}' overlaps '{b.get('title')}'"})
+            break
+    # Surface pending external-calendar confirmations (high-risk changes).
+    cal_review = await db.calendar_review.count_documents({"user_id": uid, "status": "pending"})
+    if cal_review:
+        risks.insert(0, {"level": "error",
+            "text": f"{cal_review} calendar change{'s' if cal_review > 1 else ''} need your confirmation"})
 
     rec = None
     if due_today:
@@ -249,9 +281,10 @@ async def briefing(tz_offset_min: int = 0, uid: str = CurrentUser):
     return {"greeting": greeting, "date": nowt.strftime("%A, %B %d"),
             "stats": {"classes": len(today_classes), "deadlines": len(deadlines),
                       "open_tasks": len(tasks), "review": review_count,
-                      "due_today": len(due_today), "overdue": len(overdue)},
-            "has_timed_events": len(today_classes) > 0,
-            "today_classes": today_classes, "due_today": due_today, "overdue": overdue,
+                      "due_today": len(due_today), "overdue": len(overdue),
+                      "external_today": len(external_today), "calendar_review": cal_review},
+            "has_timed_events": len(schedule) > 0,
+            "today_classes": schedule, "due_today": due_today, "overdue": overdue,
             "deadlines": deadlines[:6], "risks": risks[:6], "recommendation": rec}
 
 @router.get("/evening-review")
@@ -269,8 +302,11 @@ async def weekly_review(uid: str = CurrentUser):
     tasks = await db.tasks.find({"user_id": uid}, {"_id": 0}).to_list(500)
     events = await db.events.find({"user_id": uid}, {"_id": 0}).to_list(500)
     upcoming = [t for t in tasks if (_parse_dt(t.get("due")) and 0 <= (_parse_dt(t["due"]).date() - nowt.date()).days <= 7)]
+    ext = await db.external_events.find({"user_id": uid, "deleted": {"$ne": True}, "is_sa": {"$ne": True}}, {"_id": 0}).to_list(1000)
+    ext_week = [x for x in ext if (_parse_dt(x.get("start")) and 0 <= (_parse_dt(x["start"]).date() - nowt.date()).days <= 7)]
     ctx = {"assignments": [{"title": t["title"], "due": t.get("due"), "course": t.get("course")} for t in upcoming],
-           "events": [{"title": e["title"], "type": e.get("event_type"), "start": e.get("start")} for e in events]}
+           "events": [{"title": e["title"], "type": e.get("event_type"), "start": e.get("start")} for e in events]
+                     + [{"title": x.get("title"), "type": "external", "start": x.get("start")} for x in ext_week]}
     import json as _json
     sys = "You are an academic executive assistant. Produce a short weekly review. Return ONLY JSON: {\"summary\":string,\"busy_days\":[string],\"workload\":\"light|moderate|heavy\",\"recommendations\":[string]}"
     try:

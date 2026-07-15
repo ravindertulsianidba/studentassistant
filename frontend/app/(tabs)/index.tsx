@@ -139,6 +139,16 @@ export default function Today() {
               <View style={{ marginTop: S.xl }}>
                 <SectionTitle>Today's schedule</SectionTitle>
                 {data?.today_classes?.length ? data.today_classes.map((e: any) => (
+                  e.external ? (
+                    <Card key={e.id} style={styles.rowCard} testID={`ext-${e.id}`}>
+                      <View style={styles.iconChip}><Feather name="calendar" size={16} color={C.onBrand3} /></View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.itemTitle}>{e.title}</Text>
+                        <Text style={styles.itemSub}>{[e.location, "from your calendar"].filter(Boolean).join(" · ")}</Text>
+                      </View>
+                      <Badge label="External" tone="info" />
+                    </Card>
+                  ) : (
                   <Pressable key={e.id} onPress={() => openItem("event", e)} testID={`class-${e.id}`}>
                     <Card style={styles.rowCard}>
                       <View style={styles.iconChip}><Feather name={ICON[e.event_type] || "calendar"} size={16} color={C.onBrand3} /></View>
@@ -149,6 +159,7 @@ export default function Today() {
                       <Feather name="chevron-right" size={18} color={C.onSurface3} />
                     </Card>
                   </Pressable>
+                  )
                 )) : data?.due_today?.length ? (
                   <Empty icon="clock" title="No timed events today." sub="Your due-today tasks are listed above." />
                 ) : <Empty icon="sun" title="Your schedule is clear today." sub="Import your class schedule to see it here." />}
@@ -175,7 +186,14 @@ export default function Today() {
                   <SectionTitle>Open tasks</SectionTitle>
                   <Pressable onPress={toggleDone} testID="toggle-completed"><Text style={styles.seeAll}>{showDone ? "Hide completed" : "Show completed"}</Text></Pressable>
                 </View>
-                {tasks.length ? tasks.map((t: any) => (
+                {(() => {
+                  const shownIds = new Set<string>([
+                    ...(data?.due_today || []).map((t: any) => t.id),
+                    ...(data?.deadlines || []).map((t: any) => t.id),
+                    ...(data?.overdue || []).map((t: any) => t.id),
+                  ]);
+                  const openTasks = tasks.filter((t: any) => !shownIds.has(t.id));
+                  return openTasks.length ? openTasks.map((t: any) => (
                   <Card key={t.id} style={styles.rowCard} testID={`task-${t.id}`}>
                     <Pressable onPress={() => toggle(t.id)} testID={`task-toggle-${t.id}`} style={styles.checkbox} hitSlop={10} />
                     <Pressable style={{ flex: 1 }} onPress={() => openItem("task", t)} testID={`task-open-${t.id}`}>
@@ -185,7 +203,8 @@ export default function Today() {
                     {t.priority === "high" ? <Badge label="High" tone="error" /> : null}
                     <Feather name="chevron-right" size={18} color={C.onSurface3} />
                   </Card>
-                )) : <Empty icon="coffee" title="No open tasks." sub="Tap + to capture something." />}
+                )) : <Empty icon="coffee" title="No other open tasks." sub="Tap + to capture something." />;
+                })()}
 
                 {showDone ? (done.length ? done.map((t: any) => (
                   <Card key={t.id} style={styles.rowCard} testID={`done-${t.id}`}>
