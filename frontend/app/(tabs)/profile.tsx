@@ -14,7 +14,7 @@ import { syncPending as calSync } from "@/src/services/calendar";
 
 export default function Profile() {
   const insets = useSafeAreaInsets();
-  const { signOut, revokeAllSessions, deleteAccount, user } = useAuth();
+  const { signOut, revokeAllSessions, deleteAccount, replayOnboarding, user } = useAuth();
   const [wr, setWr] = useState<any>(null);
   const [loadingWr, setLoadingWr] = useState(false);
   const [usage, setUsage] = useState<any>(null);
@@ -152,6 +152,8 @@ export default function Profile() {
           </Card>
           <View style={{ height: S.md }} />
           <Btn label="Export my data" variant="soft" icon="download" onPress={exportData} testID="export-btn" />
+          <View style={{ height: S.sm }} />
+          <Btn label="Replay intro" variant="soft" icon="play-circle" onPress={replayOnboarding} testID="replay-intro-btn" />
           <View style={{ height: S.sm }} />
           <Btn label="Sign out" variant="ghost" icon="log-out" onPress={signOut} testID="signout-btn" />
           <View style={{ height: S.sm }} />

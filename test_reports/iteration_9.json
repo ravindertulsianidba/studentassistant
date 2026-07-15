@@ -1,0 +1,35 @@
+{
+  "summary": "Phase 3A Onboarding frontend flow — ALL 8 requested behaviors verified PASSING on mobile viewport (390x844). Fresh dev sign-in routes to /onboarding; Next advances through 3 intro slides (last CTA label 'Set up my assistant'); Skip button (onboarding-skip) present on intro slides and hidden on setup step; Recommended setup renders Reminders (Enable) + Calendar (optional/Connect) cards + 'Asked only when you need them' info box (Microphone/Camera/Photos) — 'Approve All' occurrences = 0 as required; Get started (onboarding-done) lands user on Today tab; page reload keeps user on tabs (sa_onboarded persistence works via storage); Settings tab exposes replay-intro-btn and revoke-all-btn; Replay intro re-launches onboarding from step 0; Skip on replayed flow returns to tabs cleanly; Maybe later (onboarding-maybe) visible on setup step. Auth (email/password) was NOT re-tested per request (already 17/17 in iteration 8).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "shadow* style props", "issue": "Console warning: '\"shadow*\" style props are deprecated. Use \"boxShadow\".' Non-blocking cosmetic warning (RN 0.76+ web). Already reported in iteration 8; not introduced by onboarding changes."},
+      {"component": "props.pointerEvents", "issue": "Console warning: 'props.pointerEvents is deprecated. Use style.pointerEvents' — fired when Recommended setup step mounted. Non-blocking. Reference: likely inside a Pressable/View somewhere in the onboarding tree or a shared component."},
+      {"component": "expo-notifications on web", "issue": "Console warning: '[expo-notifications] Listening to push token changes is not yet fully supported on web. Adding a listener will have no effect.' Cosmetic on web preview; native builds unaffected."}
+    ]
+  },
+  "test_report_links": [],
+  "action_items": [
+    "None blocking — Phase 3A onboarding is functionally complete and matches spec. Optional cleanup: silence 'props.pointerEvents is deprecated' warning by moving pointerEvents to the style prop (RN 0.75+ recommendation). Optional cleanup already tracked in iteration 8: migrate 'shadow*' style props to 'boxShadow'.",
+    "Note for main agent: Notifications 'Enable' and Calendar 'Connect' interactions were NOT exercised (per review-request instruction — device permission popups don't work on web preview). Rendering, testIDs, copy, and NO 'Approve All' were verified."
+  ],
+  "critical_code_review_comments": [
+    "app/_layout.tsx routing guard is correct: `if (user && !onboarded && !onOnboarding) router.replace('/onboarding')` — user is bumped to onboarding only if not yet completed. `onboarded` is derived from storage.getItem('sa_onboarded'). Public routes login/verify-email/reset-password bypass. Verified end-to-end.",
+    "src/auth.tsx completeOnboarding() sets sa_onboarded=true in storage AND local state — reload correctly rehydrates onboarded=true. replayOnboarding() sets it back to false, triggering the layout effect to route to /onboarding. Clean and idempotent.",
+    "onboarding.tsx separates intro slides from the 'Recommended setup' step via a single `step` counter; Skip is hidden on the setup step (isSetup=true) — matches spec ('No Approve All' + hide Skip on final).",
+    "PermCard handles idle/granted/denied/blocked/unavailable states — good defensive UX. Web-preview limitation is handled via Platform.OS === 'web' branch mapping to 'unavailable', so the button won't mislead web users."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "not_tested (per request)", "frontend": "100% (8/8 onboarding behaviors)"},
+  "seed_data_creation": "Two throwaway dev sessions (onboardtest+<ts>@uni.edu, onbpersist+<ts>@uni.edu) via /api/auth/dev-login. No persistent seed data beyond user rows those create.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Onboarding is fully green end-to-end for the web preview. Device permission grant/deny paths for Notifications and Calendar CANNOT be tested on web — must be verified on a native build or Expo Go. When exercising the tabs Settings screen, the visible tab label is 'Settings' (not 'You'/'Profile') and the file is app/(tabs)/profile.tsx. The URL after entering tabs is '/' not '/(tabs)/', so use `text=Today` or a tab-bar testID to confirm navigation instead of URL globs.",
+  "rca_of_issue": "N/A — no bugs found in this iteration."
+}

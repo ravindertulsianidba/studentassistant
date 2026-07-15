@@ -4,12 +4,16 @@ import { api, setAuthTokens, clearAuthTokens } from "@/src/api";
 
 const ACCESS = "sa_access_token";
 const REFRESH = "sa_refresh_token";
+const ONBOARDED = "sa_onboarded";
 
 type User = { id: string; email?: string; name?: string } | null;
 
 type AuthCtx = {
   ready: boolean;
   user: User;
+  onboarded: boolean;
+  completeOnboarding: () => Promise<void>;
+  replayOnboarding: () => Promise<void>;
   signInWithGoogleToken: (idToken: string) => Promise<void>;
   signUp: (email: string, password: string, fullName?: string) => Promise<{ email: string }>;
   signInWithPassword: (email: string, password: string) => Promise<void>;
@@ -34,6 +38,7 @@ async function persist(a: string, r: string) {
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [ready, setReady] = useState(false);
   const [user, setUser] = useState<User>(null);
+  const [onboarded, setOnboarded] = useState(true);
 
   const applyTokens = useCallback((a: string, r: string) => {
     setAuthTokens(a, r, (na, nr) => persist(na, nr));
@@ -41,6 +46,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     (async () => {
+      const flag = await storage.getItem<boolean>(ONBOARDED, false);
+      setOnboarded(!!flag);
       const a = await storage.secureGet<string>(ACCESS, "");
       const r = await storage.secureGet<string>(REFRESH, "");
       if (a && r) {
@@ -57,6 +64,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setReady(true);
     })();
   }, [applyTokens]);
+
+  const completeOnboarding = async () => { await storage.setItem(ONBOARDED, true); setOnboarded(true); };
+  const replayOnboarding = async () => { await storage.setItem(ONBOARDED, false); setOnboarded(false); };
 
   const afterLogin = async (data: any) => {
     await persist(data.access_token, data.refresh_token);
@@ -102,7 +112,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <Ctx.Provider value={{ ready, user, signInWithGoogleToken, signUp, signInWithPassword,
+    <Ctx.Provider value={{ ready, user, onboarded, completeOnboarding, replayOnboarding,
+      signInWithGoogleToken, signUp, signInWithPassword,
       verifyEmail, resendVerification, forgotPassword, resetPassword,
       devSignIn, signOut, revokeAllSessions, deleteAccount }}>
       {children}

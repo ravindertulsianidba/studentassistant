@@ -65,7 +65,8 @@ app.add_middleware(
 @app.on_event("startup")
 async def startup():
     try:
-        await db.users.create_index("google_sub", unique=True, sparse=True)
+        await db.users.create_index("google_sub", unique=True,
+            partialFilterExpression={"google_sub": {"$exists": True, "$type": "string"}})
         await db.users.create_index("email", unique=True, sparse=True)
         await db.refresh_tokens.create_index("jti_hash", unique=True)
         await db.auth_tokens.create_index("token_hash", unique=True)

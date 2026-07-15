@@ -21,14 +21,12 @@ LogBox.ignoreAllLogs(true);
 SplashScreen.preventAutoHideAsync();
 
 function RootNav() {
-  const { ready, user } = useAuth();
+  const { ready, user, onboarded } = useAuth();
   const segments = useSegments();
   const router = useRouter();
 
   useEffect(() => { wireHandlers(); }, []);
 
-  // On sign-in (and every cold start with a session) rebuild the local
-  // notification schedule from the server — this restores reminders after reboot.
   useEffect(() => {
     if (user) { syncAndSchedule().catch(() => {}); }
   }, [user]);
@@ -38,9 +36,11 @@ function RootNav() {
     SplashScreen.hideAsync();
     const publicRoutes = ["login", "verify-email", "reset-password"];
     const onPublic = publicRoutes.includes(segments[0] as string);
-    if (!user && !onPublic) router.replace("/login");
-    else if (user && segments[0] === "login") router.replace("/(tabs)");
-  }, [ready, user, segments]);
+    const onOnboarding = segments[0] === "onboarding";
+    if (!user && !onPublic) { router.replace("/login"); return; }
+    if (user && !onboarded && !onOnboarding) { router.replace("/onboarding"); return; }
+    if (user && onboarded && (segments[0] === "login" || onOnboarding)) router.replace("/(tabs)");
+  }, [ready, user, onboarded, segments]);
 
   if (!ready) return null;
 
@@ -49,6 +49,7 @@ function RootNav() {
       <Stack.Screen name="login" />
       <Stack.Screen name="verify-email" />
       <Stack.Screen name="reset-password" />
+      <Stack.Screen name="onboarding" />
       <Stack.Screen name="(tabs)" />
       <Stack.Screen name="quick-capture" options={{ presentation: "modal" }} />
       <Stack.Screen name="notes" options={{ presentation: "modal" }} />
