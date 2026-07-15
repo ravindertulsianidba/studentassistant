@@ -1,5 +1,27 @@
 # Student Assistant — PRD
 
+## Implemented v5 (2026-07-15) — Phase 3A: Secure Auth + Onboarding
+- **Secure email/password auth** (retains Google Sign-In): register, required email
+  verification, login, forgot/reset password, resend, refresh rotation, logout,
+  logout-all, account deletion. Argon2id hashing (`pwdlib`); single-use, SHA-256-hashed,
+  time-limited verification (24h) & reset (1h) tokens (`db.auth_tokens`); generic auth
+  errors; IP+account rate limiting; 5-fail → 15-min brute-force lockout; `token_version`
+  claim → immediate revoke-all + reset invalidates all sessions. Password policy: 10–128
+  chars, passphrases allowed, common passwords rejected, strength meter + confirm + show/hide.
+- **Provider-neutral SMTP** (`backend/mailer.py`) via env placeholders (`SMTP_HOST` …);
+  placeholders → in-memory `MockMailer`. Dev-only `GET /api/auth/dev-outbox` for automated
+  mail-capture tests. LIVE email delivery pending real SMTP creds.
+- **Frontend auth UI**: `/login` Sign In / Create Account tabs, Forgot Password,
+  "Check your email" state (resend cooldown, change email, back), `/verify-email` &
+  `/reset-password` deep-link screens, "Sign out of all devices" in Settings.
+- **First-run onboarding** (`app/onboarding.tsx`): 3 intro slides + "Recommended setup"
+  with opt-in Notifications & optional Calendar (**no Approve-All**), just-in-time Mic/
+  Camera (info only), Skip/Maybe-later, replayable from Settings.
+- **Tests**: backend 17/17 (`tests/test_auth_phase3a.py`), onboarding UI 8/8. Reports:
+  `test_reports/iteration_8.json` (auth), `iteration_9.json` (onboarding). See
+  `AUTHENTICATION_AND_ACCOUNT_AUDIT.md` and `PERMISSIONS_AND_FIRST_RUN_AUDIT.md`.
+
+
 ## Implemented v4 (2026-07-14) — Phase 2: Native Android + Reliability
 - **LIVE AI VALIDATED** (funded OpenAI key, `AI_PROVIDER=openai`): capture, import,
   study notes, Whisper transcription, chunked-upload transcription, source-grounded
