@@ -178,10 +178,16 @@ async def review_action(rid: str, body: ReviewActionIn, uid: str = CurrentUser):
 
 # ================= BRIEFING / REVIEWS =================
 @router.get("/briefing")
-async def briefing(uid: str = CurrentUser):
-    nowt = datetime.now(timezone.utc)
+async def briefing(tz_offset_min: int = 0, uid: str = CurrentUser):
+    # Compute "today" in the student's LOCAL timezone (client sends its offset).
+    nowt = datetime.now(timezone.utc) + timedelta(minutes=tz_offset_min)
     today = nowt.date()
     wk = nowt.strftime("%a")
+
+    def ldate(iso):
+        d = _parse_dt(iso)
+        return (d + timedelta(minutes=tz_offset_min)).date() if d else None
+
     events = await db.events.find({"user_id": uid}, {"_id": 0}).to_list(500)
     tasks = await db.tasks.find({"user_id": uid, "status": "open"}, {"_id": 0}).to_list(500)
     review_count = await db.review.count_documents({"user_id": uid, "status": "pending"})
@@ -189,32 +195,41 @@ async def briefing(uid: str = CurrentUser):
 
     today_classes = []
     for e in events:
-        d = _parse_dt(e.get("start"))
+        ld = ldate(e.get("start"))
         recurs = e.get("recurring") and e.get("days") and wk in [x[:3] for x in e.get("days")]
-        if (d and d.date() == today) or recurs:
+        if ld == today or recurs:
             today_classes.append(e)
 
-    deadlines = [t for t in tasks if (_parse_dt(t.get("due")) and 0 <= (_parse_dt(t["due"]).date() - today).days <= 7)]
-    deadlines.sort(key=lambda t: t.get("due") or "9999")
+    # Reconcile tasks into due-today / overdue / upcoming (next 7 days, excluding today).
+    # A task with a date but no time is due by end of that local day → date comparison handles it.
+    due_today, overdue, deadlines = [], [], []
+    for t in tasks:
+        ld = ldate(t.get("due"))
+        if not ld:
+            continue
+        if ld == today:
+            due_today.append(t)
+        elif ld < today:
+            overdue.append(t)
+        elif 0 < (ld - today).days <= 7:
+            deadlines.append(t)
+    for lst in (due_today, overdue, deadlines):
+        lst.sort(key=lambda t: t.get("due") or "9999")
 
     risks = []
-    for t in tasks:
-        d = _parse_dt(t.get("due"))
-        if d and d.date() < today:
-            verb = "You promised to" if t.get("category") in ("followup", "reminder") else "Overdue —"
-            risks.append({"level": "error", "text": f"{verb} {t['title']}"})
+    for t in overdue:
+        verb = "You promised to" if t.get("category") in ("followup", "reminder") else "Overdue —"
+        risks.append({"level": "error", "text": f"{verb} {t['title']}"})
     by_day = defaultdict(list)
     for t in deadlines:
-        d = _parse_dt(t.get("due"))
-        if d:
-            by_day[d.date().isoformat()].append(t)
+        ld = ldate(t.get("due"))
+        if ld:
+            by_day[ld.isoformat()].append(t)
     for day, its in by_day.items():
         if len(its) >= 2:
             risks.append({"level": "warning", "text": f"{len(its)} deadlines due on {day}"})
-    for t in deadlines:
-        d = _parse_dt(t.get("due"))
-        if d and (d.date() - today).days <= 2:
-            risks.append({"level": "error", "text": f"Due soon: {t['title']}"})
+    for t in due_today:
+        risks.append({"level": "error", "text": f"Due today: {t['title']}"})
     if not any(e.get("event_type") in ("class", "lab") for e in events):
         risks.append({"level": "info", "text": "No class schedule imported yet"})
     if imports_count == 0:
@@ -223,7 +238,9 @@ async def briefing(uid: str = CurrentUser):
         risks.append({"level": "warning", "text": f"{review_count} items in your AI Inbox"})
 
     rec = None
-    if deadlines:
+    if due_today:
+        rec = f"Focus on '{due_today[0]['title']}' — it's due today."
+    elif deadlines:
         rec = f"Start with '{deadlines[0]['title']}' — it's your nearest deadline."
     elif review_count:
         rec = "Clear your AI Inbox so nothing slips through."
@@ -231,9 +248,11 @@ async def briefing(uid: str = CurrentUser):
     greeting = "Good morning" if nowt.hour < 12 else "Good afternoon" if nowt.hour < 18 else "Good evening"
     return {"greeting": greeting, "date": nowt.strftime("%A, %B %d"),
             "stats": {"classes": len(today_classes), "deadlines": len(deadlines),
-                      "open_tasks": len(tasks), "review": review_count},
-            "today_classes": today_classes, "deadlines": deadlines[:6],
-            "risks": risks[:6], "recommendation": rec}
+                      "open_tasks": len(tasks), "review": review_count,
+                      "due_today": len(due_today), "overdue": len(overdue)},
+            "has_timed_events": len(today_classes) > 0,
+            "today_classes": today_classes, "due_today": due_today, "overdue": overdue,
+            "deadlines": deadlines[:6], "risks": risks[:6], "recommendation": rec}
 
 @router.get("/evening-review")
 async def evening_review(uid: str = CurrentUser):

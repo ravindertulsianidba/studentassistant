@@ -25,7 +25,8 @@ export default function Today() {
 
   const load = useCallback(async () => {
     try {
-      const [b, t, m] = await Promise.all([api.get("/briefing"), api.get("/tasks?status=open"), api.get("/timeline?kind=all")]);
+      const tz = -new Date().getTimezoneOffset();
+      const [b, t, m] = await Promise.all([api.get(`/briefing?tz_offset_min=${tz}`), api.get("/tasks?status=open"), api.get("/timeline?kind=all")]);
       setData(b); setTasks(t); setRecent(m.slice(0, 5));
       if (showDone) setDone(await api.get("/tasks?status=done"));
     } catch (e) {} finally { setLoading(false); setRefreshing(false); }
@@ -118,6 +119,23 @@ export default function Today() {
                 </View>
               ) : null}
 
+              {data?.due_today?.length ? (
+                <View style={{ marginTop: S.xl }}>
+                  <SectionTitle>Due today</SectionTitle>
+                  {data.due_today.map((t: any) => (
+                    <Card key={t.id} style={styles.rowCard} testID={`duetoday-${t.id}`}>
+                      <Pressable onPress={() => toggle(t.id)} testID={`duetoday-toggle-${t.id}`} style={styles.checkbox} hitSlop={10} />
+                      <Pressable style={{ flex: 1 }} onPress={() => openItem("task", t)} testID={`duetoday-open-${t.id}`}>
+                        <Text style={styles.itemTitle}>{t.title}</Text>
+                        <Text style={styles.itemSub}>{[t.category, t.course].filter(Boolean).join(" · ") || "Due by end of day"}</Text>
+                      </Pressable>
+                      {t.priority === "high" ? <Badge label="High" tone="error" /> : null}
+                      <Feather name="chevron-right" size={18} color={C.onSurface3} />
+                    </Card>
+                  ))}
+                </View>
+              ) : null}
+
               <View style={{ marginTop: S.xl }}>
                 <SectionTitle>Today's schedule</SectionTitle>
                 {data?.today_classes?.length ? data.today_classes.map((e: any) => (
@@ -131,7 +149,9 @@ export default function Today() {
                       <Feather name="chevron-right" size={18} color={C.onSurface3} />
                     </Card>
                   </Pressable>
-                )) : <Empty icon="sun" title="Your schedule is clear today." sub="Import your class schedule to see it here." />}
+                )) : data?.due_today?.length ? (
+                  <Empty icon="clock" title="No timed events today." sub="Your due-today tasks are listed above." />
+                ) : <Empty icon="sun" title="Your schedule is clear today." sub="Import your class schedule to see it here." />}
               </View>
 
               <View style={{ marginTop: S.xl }}>

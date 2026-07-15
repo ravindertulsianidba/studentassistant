@@ -1,0 +1,43 @@
+{
+  "summary": "Phase 3 iteration-1 fixes verified. Backend: pytest tests/test_today_aggregation.py -> 9 PASSED. Independent manual verification (test_briefing_manual.py) -> 5 PASSED covering briefing keys, due-today categorization, overdue vs tomorrow bucketing, PATCH status=done removes item from due_today, and no 500s on tasks/events/capture/reminders. Frontend: Login screen shows both 'Continue with Google' and the dev-only 'Continue (dev)' block (dev preview mode). After a task due today exists, the Today screen renders a 'Due today' section with the task, the schedule area shows 'No timed events today.' (NOT 'Your schedule is clear today.'), the row is tappable (opens Edit Task modal via item-detail with Title/Save/Delete controls; testID duetoday-open-<id>) and shows a checkbox (testID duetoday-toggle-<id>).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {
+        "flow": "quick-capture free-text -> Due today",
+        "issue": "Typing 'buy groceries today' into quick-capture (AI capture) routes the item to the AI Inbox (review) instead of auto-committing as a task, so it does NOT immediately appear under 'Due today' until approved from the Inbox. When a task is created directly (POST /api/tasks) the 'Due today' section renders correctly. Not a Phase 3 §1 aggregation bug (aggregation works), but the reviewer's exact repro step needs the extra 'Approve in AI Inbox' step, or a higher-confidence utterance, before the item reaches due_today. Flag for main agent to decide if the auto-commit threshold for casual 'today' phrasing should be lowered.",
+        "affected_testIDs": ["ai-prompt", "capture-input", "capture-submit", "duetoday-open-<id>"]
+      }
+    ],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_today_aggregation.py",
+    "/app/backend/tests/test_briefing_manual.py",
+    "/app/test_reports/pytest/today_aggregation.xml",
+    "/app/test_reports/pytest/briefing_manual.xml"
+  ],
+  "action_items": [
+    "OPTIONAL: consider lowering AI-capture auto-commit confidence for date-anchored short phrases like 'buy groceries today' so the quick-capture -> Due today flow works in one step (currently requires approving from AI Inbox first). Aggregation itself is correct.",
+    "OPTIONAL cleanup: console warnings on web preview - 'shadow*' style props deprecated (use boxShadow), and 'props.pointerEvents is deprecated' - not blocking but should be cleaned up in a future pass."
+  ],
+  "critical_code_review_comments": [
+    "routers/planner.py briefing endpoint: computation of due_today/overdue/deadlines uses local-date comparison with tz_offset_min applied consistently; risks list also references due_today - correct.",
+    "app/(tabs)/index.tsx: Today screen correctly branches to 'No timed events today.' Empty when today_classes empty AND due_today non-empty; falls back to 'Your schedule is clear today.' otherwise - matches spec.",
+    "login.tsx: dev sign-in block is behind __DEV__ so it will be hidden in a production/release build - matches spec. Google button renders whenever any Google client ID env var is set."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_briefing_manual.py (NEW - independent verification for items 2-6)"
+  ],
+  "success_rate": {"backend": "100% (14/14 - 9 today_aggregation + 5 manual)", "frontend": "100% (items 7-10 all verified)"},
+  "seed_data_creation": "Created ephemeral dev-login users and one task per test run via /api/tasks; no persistent seed required.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Phase 3 §1 (Today due-today aggregation) and §2 (dev sign-in behind __DEV__, Google button always shown when a client ID is configured) are both working. Remaining Phase 3 items (full email/password auth, onboarding, diagnostics, calendar picker, Active Listening) are deferred and out of scope. AI_PROVIDER on this preview may not auto-commit casual date-anchored phrases from quick-capture; if next iteration expects a one-step 'quick-capture -> due-today' flow, either raise capture confidence or pre-approve via AI Inbox.",
+  "rca_of_issue": "N/A - no bug detected in Phase 3 §1/§2 fixes."
+}

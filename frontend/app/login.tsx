@@ -76,14 +76,18 @@ export default function Login() {
             <Text style={styles.googleTxt}>Continue with Google</Text>
           </View>
         )}
-        <Text style={styles.note}>Google Sign-In activates in the installed app build. In this preview, use quick sign-in below.</Text>
+        <Text style={styles.note}>{__DEV__ ? "Google Sign-In activates in the installed app build. In this dev preview, use quick sign-in below." : "Sign in with your Google account to continue."}</Text>
 
-        <View style={styles.divider}><View style={styles.hr} /><Text style={styles.or}>preview sign-in</Text><View style={styles.hr} /></View>
-        <TextInput testID="dev-email" style={styles.input} placeholder="you@university.edu" placeholderTextColor={C.onSurface3}
-          autoCapitalize="none" keyboardType="email-address" value={email} onChangeText={setEmail} />
-        <Pressable testID="dev-signin" disabled={busy} onPress={dev} style={({ pressed }) => [styles.primary, pressed && { opacity: 0.85 }]}>
-          {busy ? <ActivityIndicator color={C.onBrand} /> : <Text style={styles.primaryTxt}>Continue</Text>}
-        </Pressable>
+        {__DEV__ ? (
+          <>
+            <View style={styles.divider}><View style={styles.hr} /><Text style={styles.or}>dev-only sign-in</Text><View style={styles.hr} /></View>
+            <TextInput testID="dev-email" style={styles.input} placeholder="you@university.edu" placeholderTextColor={C.onSurface3}
+              autoCapitalize="none" keyboardType="email-address" value={email} onChangeText={setEmail} />
+            <Pressable testID="dev-signin" disabled={busy} onPress={dev} style={({ pressed }) => [styles.primary, pressed && { opacity: 0.85 }]}>
+              {busy ? <ActivityIndicator color={C.onBrand} /> : <Text style={styles.primaryTxt}>Continue (dev)</Text>}
+            </Pressable>
+          </>
+        ) : null}
 
         <Text style={styles.legal}>By continuing you agree to record only where permitted and to our Terms & Privacy Policy.</Text>
       </View>
