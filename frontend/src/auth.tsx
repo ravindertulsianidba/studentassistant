@@ -11,8 +11,15 @@ type AuthCtx = {
   ready: boolean;
   user: User;
   signInWithGoogleToken: (idToken: string) => Promise<void>;
+  signUp: (email: string, password: string, fullName?: string) => Promise<{ email: string }>;
+  signInWithPassword: (email: string, password: string) => Promise<void>;
+  verifyEmail: (token: string) => Promise<void>;
+  resendVerification: (email: string) => Promise<void>;
+  forgotPassword: (email: string) => Promise<void>;
+  resetPassword: (token: string, password: string) => Promise<void>;
   devSignIn: (email: string) => Promise<void>;
   signOut: () => Promise<void>;
+  revokeAllSessions: () => Promise<void>;
   deleteAccount: () => Promise<void>;
 };
 
@@ -61,6 +68,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const data = await api.post("/auth/google", { id_token: idToken });
     await afterLogin(data);
   };
+  const signUp = async (email: string, password: string, fullName?: string) => {
+    const data = await api.post("/auth/register", { email, password, full_name: fullName });
+    return { email: data.email || email };
+  };
+  const signInWithPassword = async (email: string, password: string) => {
+    const data = await api.post("/auth/login", { email, password });
+    await afterLogin(data);
+  };
+  const verifyEmail = async (token: string) => { await api.post("/auth/verify-email", { token }); };
+  const resendVerification = async (email: string) => { await api.post("/auth/resend-verification", { email }); };
+  const forgotPassword = async (email: string) => { await api.post("/auth/forgot-password", { email }); };
+  const resetPassword = async (token: string, password: string) => { await api.post("/auth/reset-password", { token, password }); };
   const devSignIn = async (email: string) => {
     const data = await api.post("/auth/dev-login", { email });
     await afterLogin(data);
@@ -73,13 +92,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await storage.secureRemove(REFRESH);
     setUser(null);
   };
+  const revokeAllSessions = async () => {
+    try { await api.post("/auth/logout-all", {}); } catch {}
+    await signOut();
+  };
   const deleteAccount = async () => {
     try { await api.del("/me"); } catch {}
     await signOut();
   };
 
   return (
-    <Ctx.Provider value={{ ready, user, signInWithGoogleToken, devSignIn, signOut, deleteAccount }}>
+    <Ctx.Provider value={{ ready, user, signInWithGoogleToken, signUp, signInWithPassword,
+      verifyEmail, resendVerification, forgotPassword, resetPassword,
+      devSignIn, signOut, revokeAllSessions, deleteAccount }}>
       {children}
     </Ctx.Provider>
   );

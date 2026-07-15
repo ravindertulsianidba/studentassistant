@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="0.687" timestamp="2026-07-15T22:55:58.372583+00:00" hostname="agent-env-3b9e3408-95ac-4b5f-8631-cc3844649e42"><testcase classname="tests.test_auth_phase3a" name="test_two_user_data_isolation" time="0.657"><failure message="KeyError: 'access_token'">api = &lt;requests.sessions.Session object at 0xfb48c685f190&gt;
+
+    def test_two_user_data_isolation(api):
+        e1 = _uniq("userA")
+        e2 = _uniq("userB")
+        a = _register_verify_login(api, e1)
+        b = _register_verify_login(api, e2)
+&gt;       h1 = {"Authorization": f"Bearer {a['access_token']}"}
+                                         ^^^^^^^^^^^^^^^^^
+E       KeyError: 'access_token'
+
+tests/test_auth_phase3a.py:228: KeyError</failure></testcase></testsuite></testsuites>

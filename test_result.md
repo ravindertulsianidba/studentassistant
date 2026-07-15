@@ -229,4 +229,43 @@
 
 ## agent_communication (Phase 3 - iteration 1: Today due-today + secure preview login):
 ##     -agent: "main"
-##     -message: "Implemented Phase 3 §1 (Today due-today aggregation) and §2 (remove insecure preview sign-in from release). NOTE: Phase 3 is huge; only §1 and §2 are implemented this iteration — the rest (full email/password auth, onboarding, diagnostics, calendar picker/2-way read sync, Active Listening sessions, device audits) are DEFERRED (see PHASE3_IMPLEMENTATION_REPORT.md). TEST BOTH: BACKEND (file routers/planner.py) - run tests/test_today_aggregation.py (9 tests) and confirm GET /api/briefing?tz_offset_min=<min> returns due_today/overdue/deadlines/has_timed_events buckets; a task due local-today is in due_today NOT deadlines; overdue separate; completed-today excluded; date-no-time counts as today; timezone offset shifts the day. Confirm no regression on other endpoints. FRONTEND (web preview, dev mode so dev sign-in still shows) - login via email field + 'Continue (dev)'; Today screen: create a task due today via + capture (e.g. 'buy groceries today') then confirm it appears under a 'Due today' section; when there are no timed events but a due-today task exists, the schedule area shows 'No timed events today.' (NOT 'Your schedule is clear'); due-today task is tappable to edit and has a checkbox to complete. Also confirm the login screen still shows 'Continue with Google' and, because preview runs in __DEV__, the dev sign-in block is present (in a RELEASE build it would be hidden — cannot test release here). Report pass/fail with evidence; flag any 500s."
+##     -message: "Implemented Phase 3 §1 (Today due-today aggregation) and §2 (remove insecure preview sign-in from release)."
+
+## backend (Phase 3A — Secure Email/Password Auth + SMTP):
+##   - task: "Email/password auth (register, verify-email, login, forgot/reset password, resend, logout-all)"
+##     implemented: true
+##     working: "NA"
+##     file: "backend/routers/auth.py, backend/security.py, backend/mailer.py, backend/auth.py, backend/core.py, backend/config.py, backend/models.py"
+##     stuck_count: 0
+##     priority: "high"
+##     needs_retesting: true
+##     status_history:
+##         -working: "NA"
+##         -agent: "main"
+##         -comment: "Argon2id hashing (pwdlib), single-use hashed time-limited email verification (24h) + reset (1h) tokens in db.auth_tokens, generic auth errors, IP+account in-memory rate limiting, brute-force lockout (5 fails -> 15 min), JWT access/refresh rotation with token_version (tv) claim for immediate revoke-all, reset revokes all sessions + bumps tv, email verification REQUIRED before login (403 only after correct password). Provider-neutral SMTP via env placeholders -> MockMailer in preview. Dev-only GET /api/auth/dev-outbox returns captured emails (parse token from text). Verified locally end-to-end via curl script (register->403 unverified->verify->reuse 400->login->wrong pw 401->forgot->reset->old token 401->new login->weak pw 422)."
+
+## frontend (Phase 3A — auth UI):
+##   - task: "Login screen tabs (Sign In / Create Account), Forgot Password, Check-email, verify-email & reset-password deep-link screens, revoke-all in Settings"
+##     implemented: true
+##     working: "NA"
+##     file: "frontend/app/login.tsx, frontend/app/verify-email.tsx, frontend/app/reset-password.tsx, frontend/src/auth.tsx, frontend/app/_layout.tsx, frontend/app/(tabs)/profile.tsx"
+##     stuck_count: 0
+##     priority: "high"
+##     needs_retesting: true
+##     status_history:
+##         -working: "NA"
+##         -agent: "main"
+##         -comment: "Segmented Sign In/Create Account tabs, show/hide password, strength meter, confirm password, Forgot Password flow, Check-email state with resend cooldown + change email + back to sign in. /verify-email and /reset-password are public routes reading ?token=. Google Sign-In retained. Dev quick sign-in only in __DEV__. Settings has 'Sign out of all devices' (revoke-all)."
+
+## test_plan (current):
+##   current_focus:
+##     - "Email/password auth (register, verify-email, login, forgot/reset password, resend, logout-all)"
+##     - "Login screen tabs + verify/reset deep-link screens"
+##   stuck_tasks: []
+##   test_all: false
+##   test_priority: "high_first"
+
+## agent_communication (Phase 3A - Secure Auth):
+##     -agent: "main"
+##     -message: "Implemented Phase 3A secure email/password auth + SMTP (mock in preview). TEST BOTH. Mock mail: GET /api/auth/dev-outbox returns {messages:[{to,subject,text}]}; parse token from text 'verify-email?token=<T>' / 'reset-password?token=<T>'. BACKEND cases: (1) register sends 1 verification email; (2) login before verify -> 403; (3) verify with token -> ok; (4) reuse verify token -> 400 used; (5) expired token behavior (cannot force expiry easily — verify code path returns 400 for tampered token); (6) login after verify -> 200 session with tv claim; (7) wrong password -> 401 GENERIC 'Invalid email or password.'; (8) brute force: 5 wrong passwords -> 429 lockout; (9) forgot-password always 200 generic; (10) reset-password with token -> 200, then OLD access token -> 401 'Session expired' (tv bumped) and OLD refresh -> 401; (11) reused reset token -> 400; (12) weak password (<10) on register/reset -> 422; (13) duplicate register of verified account -> generic 200 (no leak); (14) two-user data isolation (register+verify 2 users, ensure /tasks etc scoped); (15) logout-all bumps tv (old access 401); (16) Google (/auth/google) still present, dev-login still 200 (ALLOW_INSECURE_DEV=true). Email normalization: MixedCase@X.com == mixedcase@x.com. FRONTEND (web preview, __DEV__): /login shows Sign In/Create Account tabs; Create Account -> fill name/email/password(>=10)/confirm -> strength meter -> submit -> 'Verify your email' check screen with Resend (cooldown) + 'Use a different email' + 'Back to sign in'. Forgot password link -> email -> 'Check your email'. Since real inbox isn't available, you can pull the token from /api/auth/dev-outbox and open /verify-email?token=<T> and /reset-password?token=<T> directly to confirm those screens render success/failure. Google button present. Do NOT test onboarding (not built yet). SMTP live delivery is NOT testable (placeholders) — mark as requiring live SMTP creds."
+

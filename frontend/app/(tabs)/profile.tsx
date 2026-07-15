@@ -14,7 +14,7 @@ import { syncPending as calSync } from "@/src/services/calendar";
 
 export default function Profile() {
   const insets = useSafeAreaInsets();
-  const { signOut, deleteAccount, user } = useAuth();
+  const { signOut, revokeAllSessions, deleteAccount, user } = useAuth();
   const [wr, setWr] = useState<any>(null);
   const [loadingWr, setLoadingWr] = useState(false);
   const [usage, setUsage] = useState<any>(null);
@@ -94,6 +94,13 @@ export default function Profile() {
     ]);
   };
 
+  const revokeAll = () => {
+    Alert.alert("Sign out of all devices?", "This signs you out everywhere and invalidates every active session. You'll need to sign in again.", [
+      { text: "Cancel", style: "cancel" },
+      { text: "Sign out everywhere", style: "destructive", onPress: async () => { await revokeAllSessions(); } },
+    ]);
+  };
+
   const rv = wr?.review || {};
   return (
     <View style={styles.root}>
@@ -147,6 +154,8 @@ export default function Profile() {
           <Btn label="Export my data" variant="soft" icon="download" onPress={exportData} testID="export-btn" />
           <View style={{ height: S.sm }} />
           <Btn label="Sign out" variant="ghost" icon="log-out" onPress={signOut} testID="signout-btn" />
+          <View style={{ height: S.sm }} />
+          <Btn label="Sign out of all devices" variant="ghost" icon="shield-off" onPress={revokeAll} testID="revoke-all-btn" />
           <View style={{ height: S.sm }} />
           <Btn label="Delete my account" variant="ghost" icon="trash-2" onPress={wipe} testID="wipe-btn" />
         </View>

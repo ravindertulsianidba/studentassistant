@@ -35,6 +35,25 @@ CORS_ORIGINS = [o.strip() for o in os.environ.get("CORS_ORIGINS", "").split(",")
 ALLOW_INSECURE_DEV = os.environ.get("ALLOW_INSECURE_DEV", "false").lower() == "true"
 MAX_UPLOAD_MB = int(os.environ.get("MAX_UPLOAD_MB", "25"))
 
+# --- Email/password auth token lifetimes ---
+VERIFICATION_TOKEN_HOURS = int(os.environ.get("VERIFICATION_TOKEN_HOURS", "24"))
+RESET_TOKEN_HOURS = int(os.environ.get("RESET_TOKEN_HOURS", "1"))
+RESEND_COOLDOWN_SECONDS = int(os.environ.get("RESEND_COOLDOWN_SECONDS", "300"))
+LOGIN_MAX_FAILS = int(os.environ.get("LOGIN_MAX_FAILS", "5"))
+LOGIN_LOCKOUT_MINUTES = int(os.environ.get("LOGIN_LOCKOUT_MINUTES", "15"))
+# Base URL used to build verification / reset deep links in emails.
+APP_WEB_URL = os.environ.get("APP_WEB_URL", (CORS_ORIGINS[0] if CORS_ORIGINS else "http://localhost:8081"))
+
+# --- SMTP (provider-neutral). Placeholders => MockMailer (no live delivery). ---
+SMTP_HOST = os.environ.get("SMTP_HOST", "")
+_raw_port = os.environ.get("SMTP_PORT", "587")
+SMTP_PORT = int(_raw_port) if _raw_port.strip().isdigit() else 587
+SMTP_USERNAME = os.environ.get("SMTP_USERNAME", "")
+SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD", "")
+SMTP_FROM_EMAIL = os.environ.get("SMTP_FROM_EMAIL", "")
+SMTP_FROM_NAME = os.environ.get("SMTP_FROM_NAME", "Student Assistant")
+SMTP_USE_TLS = os.environ.get("SMTP_USE_TLS", "true").lower() == "true"
+
 
 def validate() -> list[str]:
     """Return a list of missing/invalid required config. Empty list == OK."""

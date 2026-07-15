@@ -1,8 +1,36 @@
 from typing import Optional, List, Any, Dict
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
 
 class GoogleIn(BaseModel):
     id_token: str
+
+
+class RegisterIn(BaseModel):
+    email: EmailStr
+    password: str
+    full_name: Optional[str] = None
+
+
+class LoginIn(BaseModel):
+    email: EmailStr
+    password: str
+
+
+class VerifyEmailIn(BaseModel):
+    token: str
+
+
+class ResendVerificationIn(BaseModel):
+    email: EmailStr
+
+
+class ForgotPasswordIn(BaseModel):
+    email: EmailStr
+
+
+class ResetPasswordIn(BaseModel):
+    token: str
+    password: str
 
 
 class DevLoginIn(BaseModel):

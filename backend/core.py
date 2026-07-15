@@ -66,7 +66,13 @@ def token_overlap(a: str, b: str) -> float:
 _hits: Dict[str, list] = defaultdict(list)
 def rate_limit(request: Request, bucket: str, limit: int, window: int = 60):
     ip = request.client.host if request.client else "unknown"
-    key = f"{bucket}:{ip}"
+    _enforce(f"{bucket}:{ip}", limit, window)
+
+def rate_limit_key(key: str, limit: int, window: int = 60):
+    """Rate-limit an arbitrary subject (e.g. an account/email bucket)."""
+    _enforce(key, limit, window)
+
+def _enforce(key: str, limit: int, window: int):
     n = time.time()
     _hits[key] = [t for t in _hits[key] if n - t < window]
     if len(_hits[key]) >= limit:
@@ -284,18 +290,32 @@ async def route_items(uid, items, source, raw, idem=None):
 
 async def _issue_session(user):
     uid = user["id"]
-    access, _, exp = auth.create_token(uid, "access", minutes=config.JWT_ACCESS_MINUTES)
-    refresh, jti, rexp = auth.create_token(uid, "refresh", days=config.JWT_REFRESH_DAYS)
+    tv = int(user.get("token_version", 0))
+    access, _, exp = auth.create_token(uid, "access", minutes=config.JWT_ACCESS_MINUTES, extra={"tv": tv})
+    refresh, jti, rexp = auth.create_token(uid, "refresh", days=config.JWT_REFRESH_DAYS, extra={"tv": tv})
     await db.refresh_tokens.insert_one({"jti_hash": auth.hash_jti(jti), "user_id": uid,
                                         "revoked_at": None, "expires_at": rexp})
     return {"access_token": access, "refresh_token": refresh, "expires_at": exp.isoformat(),
-            "user": {"id": uid, "email": user.get("email"), "name": user.get("name")}}
+            "user": {"id": uid, "email": user.get("email"), "name": user.get("name"),
+                     "email_verified": bool(user.get("email_verified", True))}}
 
 async def _upsert_user(google_sub, email, name):
     existing = await db.users.find_one({"google_sub": google_sub})
     if existing:
-        return {"id": existing["id"], "email": existing.get("email"), "name": existing.get("name")}
+        return {"id": existing["id"], "email": existing.get("email"), "name": existing.get("name"),
+                "token_version": existing.get("token_version", 0), "email_verified": True}
+    # Link to a pre-existing email/password account with the same address.
+    norm = (email or "").strip().lower()
+    if norm:
+        by_email = await db.users.find_one({"email": norm})
+        if by_email:
+            await db.users.update_one({"id": by_email["id"]},
+                {"$set": {"google_sub": google_sub, "email_verified": True}})
+            return {"id": by_email["id"], "email": norm, "name": by_email.get("name") or name,
+                    "token_version": by_email.get("token_version", 0), "email_verified": True}
     uid = str(uuid.uuid4())
-    doc = {"id": uid, "google_sub": google_sub, "email": email, "name": name, "created_at": now_iso()}
+    doc = {"id": uid, "google_sub": google_sub, "email": norm or email, "name": name,
+           "email_verified": True, "token_version": 0, "auth_provider": "google",
+           "created_at": now_iso()}
     await db.users.insert_one(doc)
-    return {"id": uid, "email": email, "name": name}
+    return {"id": uid, "email": norm or email, "name": name, "token_version": 0, "email_verified": True}

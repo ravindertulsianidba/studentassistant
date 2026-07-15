@@ -65,8 +65,11 @@ app.add_middleware(
 @app.on_event("startup")
 async def startup():
     try:
-        await db.users.create_index("google_sub", unique=True)
+        await db.users.create_index("google_sub", unique=True, sparse=True)
+        await db.users.create_index("email", unique=True, sparse=True)
         await db.refresh_tokens.create_index("jti_hash", unique=True)
+        await db.auth_tokens.create_index("token_hash", unique=True)
+        await db.auth_tokens.create_index([("email", 1), ("purpose", 1), ("created_at", -1)])
         for coll in ["tasks", "events", "timeline", "review", "notes", "chunks",
                      "imports", "source_docs", "transcripts", "audit",
                      "commitments", "ledger", "reminders", "uploads"]:

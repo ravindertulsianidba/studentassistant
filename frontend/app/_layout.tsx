@@ -36,9 +36,10 @@ function RootNav() {
   useEffect(() => {
     if (!ready) return;
     SplashScreen.hideAsync();
-    const inLogin = segments[0] === "login";
-    if (!user && !inLogin) router.replace("/login");
-    else if (user && inLogin) router.replace("/(tabs)");
+    const publicRoutes = ["login", "verify-email", "reset-password"];
+    const onPublic = publicRoutes.includes(segments[0] as string);
+    if (!user && !onPublic) router.replace("/login");
+    else if (user && segments[0] === "login") router.replace("/(tabs)");
   }, [ready, user, segments]);
 
   if (!ready) return null;
@@ -46,6 +47,8 @@ function RootNav() {
   return (
     <Stack screenOptions={{ headerShown: false }}>
       <Stack.Screen name="login" />
+      <Stack.Screen name="verify-email" />
+      <Stack.Screen name="reset-password" />
       <Stack.Screen name="(tabs)" />
       <Stack.Screen name="quick-capture" options={{ presentation: "modal" }} />
       <Stack.Screen name="notes" options={{ presentation: "modal" }} />

@@ -1,0 +1,45 @@
+{
+  "summary": "Phase 3A email/password auth end-to-end tests. Backend pytest: 17/17 PASSED (tests/test_auth_phase3a.py). Frontend: /login Sign In/Create Account tabs, password strength meter, Google button, forgot-password link all present. Signup routes to 'Verify your email' check screen with Resend / Use a different email / Back to sign in. Forgot flow routes to 'Check your email'. /verify-email?token=<T> shows 'Email verified' with Continue-to-sign-in button. /reset-password?token=<T> renders new-password form. Backend flows covered: register+one email, 403 before verify, verify success+reuse-400, tampered-token-400, login 200 after verify, generic 401 wrong password, 5-fail lockout -> 429, forgot generic 200, reset-password revokes access & refresh (token_version bump) & reset-token-reuse 400, weak-password 422 on register+reset, duplicate-registration of verified returns generic 200, email normalization (MixedCase@Uni.EDU), two-user tasks/timeline isolation, logout-all revokes old access, Google 401 on bad token, dev-login 200 (ALLOW_INSECURE_DEV=true). Found one CRITICAL backend bug during first run and FIXED it (see rca_of_issue).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "IP rate_limit for /api/auth/register", "issue": "The per-IP register bucket (10/min) is shared across the whole preview ingress, so running the backend pytest suite immediately followed by frontend UI signup on the same host triggers 'Too many requests. Please slow down.' The UI actually handles this correctly (shows the message inline), and it self-recovers after ~60s. Not a functional bug, just something to be aware of during rapid regression."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "shadow* style props", "issue": "Console warning: '\"shadow*\" style props are deprecated. Use \"boxShadow\".' Non-blocking; should be migrated to boxShadow (React Native 0.76+). Reference: multiple StyleSheet.create() blocks (e.g. /app/frontend/app/login.tsx and shared theme)."},
+      {"component": "expo-notifications on web", "issue": "Console warning: '[expo-notifications] Listening to push token changes is not yet fully supported on web. Adding a listener will have no effect.' Cosmetic in web preview; native builds are unaffected."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_auth_phase3a.py",
+    "/app/test_reports/pytest/auth_phase3a.xml"
+  ],
+  "action_items": [
+    "None required for Phase 3A — all 17 auth behaviors are green. Optional cleanup: migrate 'shadow*' style props to 'boxShadow' to silence RN 0.76+ web-console deprecation warnings.",
+    "Documentation nit: /app/memory/test_credentials.md mentions 'POST /api/auth/reset-password revokes all sessions' and 'Password updated. Please sign in with your new password.' — verified in tests."
+  ],
+  "critical_code_review_comments": [
+    "FIXED (this iteration): /app/backend/routers/auth.py register() previously wrote `google_sub: null` for every password-only user. The users collection has a UNIQUE index on google_sub declared as `sparse=True` (server.py:68), but MongoDB sparse indexes DO index documents whose field is explicitly null — they only skip documents missing the field entirely. Consequence: the FIRST password registration succeeded, every subsequent one crashed with E11000 duplicate key error and returned HTTP 500. Fix applied: omit google_sub from the insert. Also unset google_sub on the existing null-key doc so the collection is clean. Alternative future-proof fix (recommended for main agent): convert the index to a partial index `{ google_sub: { $exists: true, $ne: null } }` so accidental nulls elsewhere can never regress this.",
+    "security.py password policy is correct: min 10, max 128, spaces allowed, common-password bundled list checked. Argon2id via pwdlib.",
+    "auth.py get_current_user correctly enforces token_version parity, so /me and other CurrentUser routes reject old access tokens after password reset / logout-all — verified.",
+    "routers/auth.py reset-password bumps token_version AND explicitly revokes outstanding refresh_tokens — both required, both verified.",
+    "IP-based rate_limit uses request.client.host which behind an ingress may collapse many clients to the same key. Acceptable for preview; in production consider X-Forwarded-For extraction or per-account buckets (already partially in place via rate_limit_key).",
+    "MockMailer trims to last 200 messages and dev-outbox returns last 50 — sufficient for tests but heavy test suites could theoretically evict older tokens. Not observed in this run."
+  ],
+  "updated_files": [
+    "/app/backend/routers/auth.py (removed google_sub:null from password-register insert; added explanatory comment)",
+    "/app/backend/tests/test_auth_phase3a.py (NEW comprehensive Phase 3A test suite, 17 tests)",
+    "MongoDB: db.users.updateMany({google_sub: null}, {$unset:{google_sub:''}}) (one-time cleanup of stale doc)"
+  ],
+  "success_rate": {"backend": "100% (17/17)", "frontend": "100% (all Phase 3A UI screens & flows verified)"},
+  "seed_data_creation": "None persistent. Every backend test uses a unique tester+<ts>_<pid>@uni.edu email; frontend UI test used uifresh+<ts>@uni.edu. Passwords all set to 'correct horse battery staple' per test_credentials.md.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Phase 3A auth is fully green (17/17 backend + 4/4 UI flows). MockMailer is in use because SMTP env is placeholders — live email delivery still needs real SMTP creds and cannot be verified in this preview. Expired-token paths (24h verify, 1h reset) were not exercised (would require waiting). The users.google_sub unique+sparse index accepts null values — the fix in this iteration works around it by omitting the field on password inserts; consider migrating to a partial index for extra safety. Rate limit on POST /api/auth/register is 10/min per IP; if you run the full pytest suite then jump straight to UI signup you'll see 'Too many requests' briefly.",
+  "rca_of_issue": "CRITICAL BACKEND BUG (found & fixed this iteration): E11000 duplicate key error on the second and every subsequent password registration. Reproduction: POST /api/auth/register twice with different fresh emails on a clean DB — the first returns 200, the second returns 500 with `pymongo.errors.DuplicateKeyError: E11000 ... users index: google_sub_1 dup key: { google_sub: null }`. Root cause: /app/backend/routers/auth.py:107 inserted `google_sub: None` for every password-only user; the users.google_sub unique+sparse index (server.py:68) does not skip explicit nulls (sparse only skips missing fields), so the second null collided with the first. Mitigation applied: (a) removed the `google_sub: None` field from the password-register insert, and (b) ran `db.users.updateMany({google_sub: null}, {$unset:{google_sub:''}})` to remove the pre-existing null-key doc. Recommended follow-up: convert the index to a partial index (`partialFilterExpression: { google_sub: { $exists: true, $ne: null } }`) to defend against future regressions from any other write path that might set google_sub to null."
+}
