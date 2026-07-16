@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Platform, Share, Alert, Modal } from "react-native";
+import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Platform, Share, Modal, Linking } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
 import { Feather } from "@expo/vector-icons";
@@ -11,6 +11,7 @@ import { api } from "@/src/api";
 import { Card, SectionTitle, Btn, Badge } from "@/src/components/ui";
 import { health as notifHealth, sendTestNotification } from "@/src/services/notifications";
 import { GOOGLE_WEB_CLIENT_ID, nativeModuleAvailable, signInWithGoogle } from "@/src/services/googleSignin";
+import * as billing from "@/src/services/billing";
 
 const isDevice = Platform.OS === "ios" || Platform.OS === "android";
 const TZ = (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone; } catch { return "UTC"; } })();
@@ -34,6 +35,7 @@ export default function Diagnostics() {
   const [log, setLog] = useState<string>("");
   const [bundle, setBundle] = useState<any>(null);
   const [bundleText, setBundleText] = useState("");
+  const [plan, setPlan] = useState<billing.BillingStatus | null>(null);
 
   const load = useCallback(async () => {
     let mic = "unavailable", notif = "unavailable", cal = "unavailable", scheduled = 0;
@@ -44,6 +46,7 @@ export default function Diagnostics() {
       api.post("/diagnostics/device-state", { mic_permission: mic, notif_permission: notif }).catch(() => {});
     }
     setDev({ mic, notif, cal, scheduled });
+    try { setPlan(await billing.fetchStatus()); } catch {}
     try { setD(await api.get(`/diagnostics?tz=${encodeURIComponent(TZ)}`)); } finally { setLoading(false); }
   }, []);
 
@@ -119,6 +122,15 @@ export default function Diagnostics() {
     finally { setRunning(""); }
   };
   const shareBundle = async () => { await Share.share({ message: bundleText }); setBundle(null); };
+  const restorePurchases = () => run("restore", async () => {
+    if (!billing.canPurchase()) return "✕ Subscriptions aren't available in this build yet.";
+    await billing.restore(); return "✓ Purchases restored";
+  });
+  const manageSubscription = () => {
+    const pkg = plan?.product?.package_name || "com.decisivlabs.studentassistant";
+    const sku = plan?.product?.product_id || "student_assistant_premium";
+    Linking.openURL(`https://play.google.com/store/account/subscriptions?sku=${sku}&package=${pkg}`);
+  };
 
   const tone = (ok: boolean) => (ok ? "success" : "error");
   const permTone = (p: string) => (p === "granted" ? "success" : p === "unavailable" ? "info" : "warning");
@@ -141,6 +153,33 @@ export default function Diagnostics() {
               <Row label="AI provider" value={`${d.ai_provider.provider}${d.ai_provider.configured ? "" : " (not configured)"}`} tone={tone(d.ai_provider.configured)} />
               <Row label="Timezone" value={d.timezone} />
             </Card>
+
+            {plan && (
+              <>
+                <SectionTitle>Plan & usage</SectionTitle>
+                <Card>
+                  <Row label="Current plan" value={plan.plan === "premium" ? "Premium" : "Free (Starter Pack)"} tone={plan.plan === "premium" ? "success" : "info"} />
+                  <Row label="Status" value={plan.state} />
+                  {plan.plan === "premium"
+                    ? <Row label={plan.renews ? "Renews" : "Access until"} value={plan.current_period_end ? new Date(plan.current_period_end).toLocaleDateString() : (plan.cycle_end ? new Date(plan.cycle_end).toLocaleDateString() : "—")} />
+                    : <Row label="Starter Pack" value="One-time, does not renew" />}
+                  {Object.entries(plan.features).map(([k, f]) => (
+                    <View key={k} style={styles.usageRow}>
+                      <View style={styles.usageHead}>
+                        <Text style={styles.rowLabel}>{f.label}</Text>
+                        <Text style={styles.rowVal}>{f.remaining} of {f.allowance} left</Text>
+                      </View>
+                      <View style={styles.bar}><View style={[styles.barFill, { width: `${Math.min(100, f.pct)}%`, backgroundColor: f.pct >= 100 ? C.error : f.pct >= 80 ? C.warning : C.brand }]} /></View>
+                    </View>
+                  ))}
+                  <View style={{ flexDirection: "row", gap: S.sm, marginTop: S.sm, flexWrap: "wrap" }}>
+                    <Btn label={plan.plan === "premium" ? "See plan" : "Upgrade"} variant="primary" icon="zap" onPress={() => router.push("/paywall")} testID="diag-upgrade" />
+                    <Btn label="Restore Purchases" variant="soft" icon="refresh-cw" onPress={restorePurchases} testID="diag-restore" />
+                    <Btn label="Manage Subscription" variant="soft" icon="external-link" onPress={manageSubscription} testID="diag-manage" />
+                  </View>
+                </Card>
+              </>
+            )}
 
             <SectionTitle>Notifications & reminders</SectionTitle>
             <Card>
@@ -217,6 +256,10 @@ const styles = StyleSheet.create({
   row: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: S.sm, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: C.border },
   rowLabel: { fontFamily: F.body, fontSize: 14, color: C.onSurface2, flex: 1 },
   rowVal: { fontFamily: F.bodyMed, fontSize: 14, color: C.onSurface },
+  usageRow: { paddingVertical: S.sm, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: C.border },
+  usageHead: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 6 },
+  bar: { height: 6, borderRadius: 3, backgroundColor: C.surface3, overflow: "hidden" },
+  barFill: { height: 6, borderRadius: 3 },
   actions: { gap: S.sm },
   log: { fontFamily: F.bodyMed, fontSize: 13, color: C.onSurface, backgroundColor: C.surface3, padding: S.md, borderRadius: R.md, marginBottom: S.md },
   runRow: { flexDirection: "row", alignItems: "center", gap: S.sm, marginTop: S.md },

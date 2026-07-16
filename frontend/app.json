@@ -84,7 +84,8 @@
         {
           "iosUrlScheme": "com.googleusercontent.apps.130940560692-ld17qvuahirmicb5o74qktuvvaa2cgnr"
         }
-      ]
+      ],
+      "expo-iap"
     ],
     "experiments": {
       "typedRoutes": true

@@ -54,6 +54,73 @@ SMTP_FROM_EMAIL = os.environ.get("SMTP_FROM_EMAIL", "")
 SMTP_FROM_NAME = os.environ.get("SMTP_FROM_NAME", "Student Assistant")
 SMTP_USE_TLS = os.environ.get("SMTP_USE_TLS", "true").lower() == "true"
 
+# --- App environment ---
+APP_ENV = os.environ.get("APP_ENV", "development")
+
+# ================= Monetization / entitlements / cost control =================
+def _int(name, default):
+    try:
+        return int(os.environ.get(name, str(default)))
+    except Exception:
+        return default
+
+def _float(name, default):
+    try:
+        return float(os.environ.get(name, str(default)))
+    except Exception:
+        return default
+
+# Free one-time Starter Pack (lifetime, non-renewing).
+FREE_STARTER_AUDIO_MINUTES = _int("FREE_STARTER_AUDIO_MINUTES", 30)
+FREE_STARTER_AI_IMPORTS = _int("FREE_STARTER_AI_IMPORTS", 2)
+FREE_STARTER_IMPORT_PAGES = _int("FREE_STARTER_IMPORT_PAGES", 10)
+FREE_STARTER_MEMORY_QUESTIONS = _int("FREE_STARTER_MEMORY_QUESTIONS", 5)
+FREE_STARTER_AI_BRIEFINGS = _int("FREE_STARTER_AI_BRIEFINGS", 2)
+
+# Premium per 30-day cycle.
+PREMIUM_AUDIO_MINUTES_PER_CYCLE = _int("PREMIUM_AUDIO_MINUTES_PER_CYCLE", 300)
+PREMIUM_MAX_RECORDING_MINUTES = _int("PREMIUM_MAX_RECORDING_MINUTES", 120)
+PREMIUM_AI_IMPORTS_PER_CYCLE = _int("PREMIUM_AI_IMPORTS_PER_CYCLE", 25)
+PREMIUM_IMPORT_PAGES_PER_CYCLE = _int("PREMIUM_IMPORT_PAGES_PER_CYCLE", 150)
+PREMIUM_MAX_PAGES_PER_IMPORT = _int("PREMIUM_MAX_PAGES_PER_IMPORT", 20)
+PREMIUM_MEMORY_QUESTIONS_PER_CYCLE = _int("PREMIUM_MEMORY_QUESTIONS_PER_CYCLE", 100)
+PREMIUM_DAILY_BRIEFINGS_PER_CYCLE = _int("PREMIUM_DAILY_BRIEFINGS_PER_CYCLE", 31)
+PREMIUM_WEEKLY_REVIEWS_PER_CYCLE = _int("PREMIUM_WEEKLY_REVIEWS_PER_CYCLE", 5)
+
+# Business guardrails.
+TARGET_VARIABLE_COST_RATIO = _float("TARGET_VARIABLE_COST_RATIO", 0.20)
+CRITICAL_VARIABLE_COST_RATIO = _float("CRITICAL_VARIABLE_COST_RATIO", 0.30)
+FREE_STARTER_COST_ALERT_USD = _float("FREE_STARTER_COST_ALERT_USD", 0.75)
+GLOBAL_DAILY_SPEND_ALERT_USD = _float("GLOBAL_DAILY_SPEND_ALERT_USD", 25.0)
+GLOBAL_MONTHLY_SPEND_ALERT_USD = _float("GLOBAL_MONTHLY_SPEND_ALERT_USD", 400.0)
+STARTER_INSTALL_ANOMALY_THRESHOLD = _int("STARTER_INSTALL_ANOMALY_THRESHOLD", 5)
+
+# Pricing display reference (NOT shown in app; Play provides localized prices).
+PRICE_MONTHLY_CAD = _float("PRICE_MONTHLY_CAD", 11.99)
+PRICE_ANNUAL_CAD = _float("PRICE_ANNUAL_CAD", 109.99)
+CAD_USD_RATE = _float("CAD_USD_RATE", 0.73)
+
+# Emergency per-feature kill switches (comma-separated feature keys).
+KILL_SWITCHES = [s.strip() for s in os.environ.get("KILL_SWITCHES", "").split(",") if s.strip()]
+
+# Raw-media / temp-file retention (hours) for storage cost control.
+RAW_AUDIO_RETENTION_HOURS = _int("RAW_AUDIO_RETENTION_HOURS", 24)
+TEMP_UPLOAD_RETENTION_HOURS = _int("TEMP_UPLOAD_RETENTION_HOURS", 24)
+
+# --- Google Play billing (backend entitlement authority) ---
+BILLING_ENABLED = os.environ.get("BILLING_ENABLED", "false").lower() == "true"
+GOOGLE_PLAY_PACKAGE_NAME = os.environ.get("GOOGLE_PLAY_PACKAGE_NAME", "com.decisivlabs.studentassistant")
+GOOGLE_PLAY_SUBSCRIPTION_PRODUCT_ID = os.environ.get("GOOGLE_PLAY_SUBSCRIPTION_PRODUCT_ID", "student_assistant_premium")
+GOOGLE_PLAY_MONTHLY_BASE_PLAN_ID = os.environ.get("GOOGLE_PLAY_MONTHLY_BASE_PLAN_ID", "monthly")
+GOOGLE_PLAY_ANNUAL_BASE_PLAN_ID = os.environ.get("GOOGLE_PLAY_ANNUAL_BASE_PLAN_ID", "annual")
+# Path to the Google service-account JSON (never commit the file itself).
+GOOGLE_PLAY_SERVICE_ACCOUNT_JSON = os.environ.get("GOOGLE_PLAY_SERVICE_ACCOUNT_JSON", "")
+# Pub/Sub OIDC audience / service account email used to authenticate RTDN pushes.
+PUBSUB_VERIFICATION_TOKEN = os.environ.get("PUBSUB_VERIFICATION_TOKEN", "")
+PUBSUB_SERVICE_ACCOUNT_EMAIL = os.environ.get("PUBSUB_SERVICE_ACCOUNT_EMAIL", "")
+# Simple admin guard for sanitized monetization reports.
+ADMIN_EMAILS = [e.strip().lower() for e in os.environ.get("ADMIN_EMAILS", "").split(",") if e.strip()]
+
 
 def validate() -> list[str]:
     """Return a list of missing/invalid required config. Empty list == OK."""

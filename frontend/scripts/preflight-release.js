@@ -136,6 +136,16 @@ if (plugins.includes("react-native-nitro-google-signin"))
   ok.push("react-native-nitro-google-signin config plugin present");
 else warn.push("react-native-nitro-google-signin config plugin not found in app.json plugins.");
 
+// 7c) Billing config plugin + monetization gating.
+if (plugins.includes("expo-iap")) ok.push("expo-iap billing config plugin present");
+else warn.push("expo-iap config plugin not found in app.json plugins.");
+const billingEnabled = /^true$/i.test(E("EXPO_PUBLIC_BILLING_ENABLED") || "");
+const monetizationExpected = /^true$/i.test(E("EXPO_PUBLIC_MONETIZATION_EXPECTED") || "");
+if (monetizationExpected && !billingEnabled)
+  fail.push("Monetization is expected (EXPO_PUBLIC_MONETIZATION_EXPECTED=true) but EXPO_PUBLIC_BILLING_ENABLED is not true.");
+else if (billingEnabled) ok.push("Billing enabled for this build");
+else ok.push("Billing disabled (Free + Starter Pack only) — acceptable pre-Play-Console");
+
 // 8) .env.example exists.
 if (!fs.existsSync(path.join(ROOT, ".env.example"))) fail.push(".env.example is missing.");
 else ok.push(".env.example present");

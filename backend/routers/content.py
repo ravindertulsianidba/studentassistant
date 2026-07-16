@@ -12,6 +12,7 @@ import ai_service
 import auth
 import reliability as rel
 import vectorstore as vs
+import monetization as mon
 from db import db
 from core import (now_iso, clean, _parse_dt, normalize, token_overlap, rate_limit,
     add_timeline, add_chunks, enforce_ai, maybe_reminder, conf_label, get_prefs,
@@ -59,15 +60,23 @@ Schedules -> recurring class/lab events with days & times. Syllabus/assignment s
 async def import_doc(inp: ImportIn, request: Request, uid: str = CurrentUser):
     rate_limit(request, "ai", 30)
     await enforce_ai(uid)
-    nowt = datetime.now(timezone.utc)
     if inp.image_base64 and len(inp.image_base64) > config.MAX_UPLOAD_MB * 1024 * 1024 * 1.4:
         raise HTTPException(status_code=413, detail=f"File too large (max {config.MAX_UPLOAD_MB} MB)")
     if not inp.image_base64 and not inp.text:
         raise HTTPException(status_code=400, detail="Provide an image or text to import")
+    # Meter: 1 AI import + 1 page (single image/text = 1 page). Refund if the AI op fails.
+    h_imp, h_pg, _ = await mon.reserve_import(uid, 1)
+    nowt = datetime.now(timezone.utc)
     user_msg = f"Current date: {nowt.isoformat()} ({nowt.strftime('%A')}). Classify and extract."
     if inp.text:
         user_msg += f"\n\nDocument text:\n{inp.text[:15000]}"
-    data = await ai_service.extract_json(IMPORT_SYS, user_msg, image_b64=inp.image_base64)
+    try:
+        data = await ai_service.extract_json(IMPORT_SYS, user_msg, image_b64=inp.image_base64)
+    except Exception:
+        await mon.refund(h_imp); await mon.refund(h_pg)
+        raise
+    await mon.record_usage(h_imp, op="import", model=config.OPENAI_MODEL_VISION, pages=1)
+    await mon.record_usage(h_pg, op="import_pages", model=config.OPENAI_MODEL_VISION, pages=1)
     doc_type = (data.get("doc_type") if isinstance(data, dict) else None) or (inp.kind or "document")
     extracted = (data.get("extracted_text") if isinstance(data, dict) else "") or inp.text or ""
     items = data.get("items", []) if isinstance(data, dict) else []
@@ -138,8 +147,10 @@ async def import_file(request: Request, uid: str = CurrentUser, file: UploadFile
     await add_chunks(uid, "source_doc", src_id, f"{file.filename}", None, text)
     review, ai_extracted, ai_error = [], False, None
     nowt = datetime.now(timezone.utc)
+    h_imp = h_pg = None
     try:
         await enforce_ai(uid)
+        h_imp, h_pg, _ = await mon.reserve_import(uid, pages or 1)
         data = await ai_service.extract_json(
             IMPORT_SYS,
             f"Current date: {nowt.isoformat()} ({nowt.strftime('%A')}). Classify and extract.\n\nDocument text:\n{text[:15000]}")
@@ -155,8 +166,14 @@ async def import_file(request: Request, uid: str = CurrentUser, file: UploadFile
             await db.review.insert_one(dict(rev))
             review.append(clean(rev))
         await db.source_docs.update_one({"id": src_id}, {"$set": {"doc_type": doc_type}})
+        await mon.record_usage(h_imp, op="import_file", model=config.OPENAI_MODEL_JSON, pages=h_pg["amount"])
+        await mon.record_usage(h_pg, op="import_file_pages", model=config.OPENAI_MODEL_JSON, pages=h_pg["amount"])
         ai_extracted = True
     except ai_service.AIError as e:
+        if h_imp:
+            await mon.refund(h_imp)
+        if h_pg:
+            await mon.refund(h_pg)
         ai_error = str(e)
     await db.imports.insert_one({"id": str(uuid.uuid4()), "user_id": uid, "kind": "file",
         "source_id": src_id, "count": len(review), "created_at": now_iso()})
@@ -170,16 +187,32 @@ async def import_file(request: Request, uid: str = CurrentUser, file: UploadFile
 # ================= TRANSCRIBE + STUDY NOTES =================
 @router.post("/transcribe")
 async def transcribe_audio(request: Request, uid: str = CurrentUser, file: UploadFile = File(...),
-                           course: Optional[str] = Form(None), title: Optional[str] = Form("Lecture")):
+                           course: Optional[str] = Form(None), title: Optional[str] = Form("Lecture"),
+                           duration_seconds: Optional[float] = Form(None)):
     rate_limit(request, "ai", 30)
     await enforce_ai(uid)
     raw = await file.read()
     if len(raw) > config.MAX_UPLOAD_MB * 1024 * 1024:
         raise HTTPException(status_code=413, detail=f"Audio too large (max {config.MAX_UPLOAD_MB} MB)")
-    text = await ai_service.transcribe(raw, filename=file.filename or "audio.m4a")
+    # Enforce single-recording cap and meter shared audio minutes.
+    minutes = mon.minutes_ceil(duration_seconds) if duration_seconds else 1
+    cap = mon.max_recording_minutes((await mon.resolve_entitlement(uid))["plan"])
+    if minutes > cap:
+        raise HTTPException(status_code=413, detail={
+            "error": "recording_too_long", "max_minutes": cap,
+            "message": f"Single recordings are limited to {cap} minutes."})
+    handle = await mon.reserve(uid, "audio_minutes", minutes)
+    try:
+        text = await ai_service.transcribe(raw, filename=file.filename or "audio.m4a")
+    except Exception:
+        await mon.refund(handle)
+        raise
+    await mon.record_usage(handle, op="transcribe", model=config.OPENAI_MODEL_TRANSCRIBE,
+                           audio_minutes=minutes, file_size=len(raw), settle_amount=minutes)
     tid = str(uuid.uuid4())
     await db.transcripts.insert_one({"id": tid, "user_id": uid, "title": title, "course": course,
-                                     "text": text, "created_at": now_iso()})
+                                     "text": text, "created_at": now_iso(),
+                                     "raw_audio_pending_delete_at": (datetime.now(timezone.utc) + timedelta(hours=config.RAW_AUDIO_RETENTION_HOURS)).isoformat()})
     await add_chunks(uid, "transcript", tid, f"{title} transcript", course, text)
     return {"transcript_id": tid, "text": text}
 
@@ -247,8 +280,15 @@ async def search(inp: SearchIn, request: Request, uid: str = CurrentUser):
         return {"answer": "I couldn't find anything in your own materials to verify that. Try capturing or importing the relevant document.", "citations": [], "mode": mode}
     if mode == "keyword":
         await enforce_ai(uid)  # count the answer-generation call once
+    # Meter the AI Memory answer against the entitlement (refund if generation fails).
+    handle = await mon.reserve(uid, "memory_question", 1)
     context = "\n\n".join(f"[Source: {c['source_label']}]\n{c['text']}" for c in top)
     sys = "You answer ONLY from the provided sources (the student's own data). Cite the exact [Source: ...] label after each fact. If the sources don't contain the answer, say you cannot verify it. Never invent facts. Respond in plain text (this is JSON-free)."
-    answer = await ai_service.complete_text(sys, f"Question: {inp.query}\n\nSources:\n{context}")
+    try:
+        answer = await ai_service.complete_text(sys, f"Question: {inp.query}\n\nSources:\n{context}")
+    except Exception:
+        await mon.refund(handle)
+        raise
+    await mon.record_usage(handle, op="memory_question", model=config.OPENAI_MODEL_JSON)
     citations = [{"label": c["source_label"], "snippet": c["text"][:160]} for c in top]
     return {"answer": answer, "citations": citations, "mode": mode}

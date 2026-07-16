@@ -14,6 +14,9 @@ export function clearAuthTokens() {
   refreshToken = null;
 }
 
+let onLimitReached: ((detail: any) => void) | null = null;
+export function setLimitHandler(cb: ((detail: any) => void) | null) { onLimitReached = cb; }
+
 async function req(path: string, opts: RequestInit = {}, retry = true): Promise<any> {
   const headers: any = { "Content-Type": "application/json", ...(opts.headers || {}) };
   if (accessToken) headers["Authorization"] = `Bearer ${accessToken}`;
@@ -34,7 +37,17 @@ async function req(path: string, opts: RequestInit = {}, retry = true): Promise<
   }
   if (!res.ok) {
     const e = await res.json().catch(() => ({ detail: `Request failed (${res.status})` }));
-    throw new Error(typeof e.detail === "string" ? e.detail : `Request failed (${res.status})`);
+    const detail = (e as any).detail;
+    // Entitlement/limit responses carry a structured detail — surface the paywall.
+    if (res.status === 402 && detail && typeof detail === "object") {
+      onLimitReached?.(detail);
+      const err: any = new Error(detail.message || "You've reached this allowance.");
+      err.status = 402; err.payload = detail;
+      throw err;
+    }
+    const err: any = new Error(typeof detail === "string" ? detail : `Request failed (${res.status})`);
+    err.status = res.status; err.payload = detail;
+    throw err;
   }
   return res.json();
 }

@@ -157,6 +157,14 @@ async def verify_email(body: VerifyEmailIn):
     await db.auth_tokens.update_many(
         {"email": email, "purpose": "verify_email", "used_at": None},
         {"$set": {"used_at": _utcnow()}})
+    # Grant the one-time, non-renewing Starter Pack to this verified account (idempotent).
+    try:
+        import monetization as mon
+        u = await db.users.find_one({"email": email}, {"id": 1})
+        if u:
+            await mon.grant_starter_pack(u["id"])
+    except Exception:
+        pass
     return {"message": "Email verified. You can now sign in.", "verified": True}
 
 

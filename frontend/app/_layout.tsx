@@ -8,6 +8,8 @@ import { useFonts } from "expo-font";
 
 import { useIconFonts } from "@/src/hooks/use-icon-fonts";
 import { AuthProvider, useAuth } from "@/src/auth";
+import { setLimitHandler } from "@/src/api";
+import { logEvent as logBillingEvent } from "@/src/services/billing";
 import { wireHandlers, syncAndSchedule } from "@/src/services/notifications";
 import { fullSync as calendarFullSync } from "@/src/services/calendar";
 import { registerBackgroundSync } from "@/src/services/background";
@@ -28,6 +30,16 @@ function RootNav() {
   const router = useRouter();
 
   useEffect(() => { wireHandlers(); registerBackgroundSync(); }, []);
+
+  // Any backend 402 (Starter Pack / Premium limit reached, or a kill-switched feature)
+  // routes the user to the paywall with the relevant feature context.
+  useEffect(() => {
+    setLimitHandler((detail: any) => {
+      logBillingEvent("upgrade_opened", undefined, detail?.feature || detail?.error);
+      router.push({ pathname: "/paywall", params: { feature: detail?.feature || "", reason: detail?.error || "" } });
+    });
+    return () => setLimitHandler(null);
+  }, [router]);
 
   const appState = useRef(AppState.currentState);
   useEffect(() => {
@@ -74,6 +86,7 @@ function RootNav() {
       <Stack.Screen name="calendar-connect" options={{ presentation: "modal" }} />
       <Stack.Screen name="listen" options={{ presentation: "modal" }} />
       <Stack.Screen name="diagnostics" options={{ presentation: "modal" }} />
+      <Stack.Screen name="paywall" options={{ presentation: "modal" }} />
       <Stack.Screen name="quick-capture" options={{ presentation: "modal" }} />
       <Stack.Screen name="notes" options={{ presentation: "modal" }} />
       <Stack.Screen name="record" options={{ presentation: "modal" }} />
