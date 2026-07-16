@@ -162,6 +162,10 @@ export default function Capture() {
                   <Btn label="Gallery" variant="soft" icon="image" onPress={() => pickFile(false)} testID="capture-file" style={{ flex: 1 }} />
                 </View>
                 <Btn label="Document (PDF / DOCX / TXT)" variant="soft" icon="file" onPress={pickDocument} testID="capture-document" style={{ marginTop: S.sm }} />
+                <View style={[styles.attachRow, { marginTop: S.sm }]}>
+                  <Btn label="Record lecture" variant="soft" icon="mic" onPress={() => { router.back(); router.push("/record"); }} testID="capture-record" style={{ flex: 1 }} />
+                  <Btn label="Active Listening" variant="soft" icon="radio" onPress={() => { router.back(); router.push("/listen"); }} testID="capture-listen" style={{ flex: 1 }} />
+                </View>
                 {err ? <Text style={styles.errTxt} testID="capture-error">{err}</Text> : null}
                 <Text style={styles.hintSmall}>Add a schedule, syllabus, email, or slide — I'll figure out what it is.</Text>
               </>

@@ -1,7 +1,7 @@
 import { Stack, useRouter, useSegments } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
-import { useEffect } from "react";
-import { LogBox } from "react-native";
+import { useEffect, useRef } from "react";
+import { LogBox, AppState } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { useFonts } from "expo-font";
@@ -10,6 +10,7 @@ import { useIconFonts } from "@/src/hooks/use-icon-fonts";
 import { AuthProvider, useAuth } from "@/src/auth";
 import { wireHandlers, syncAndSchedule } from "@/src/services/notifications";
 import { fullSync as calendarFullSync } from "@/src/services/calendar";
+import { registerBackgroundSync } from "@/src/services/background";
 
 // Disable logbox errors etc so that users can see the app
 // and agent works as expected.
@@ -26,13 +27,27 @@ function RootNav() {
   const segments = useSegments();
   const router = useRouter();
 
-  useEffect(() => { wireHandlers(); }, []);
+  useEffect(() => { wireHandlers(); registerBackgroundSync(); }, []);
 
+  const appState = useRef(AppState.currentState);
   useEffect(() => {
     if (user) {
       syncAndSchedule().catch(() => {});
       calendarFullSync().catch(() => {});
     }
+  }, [user]);
+
+  // Foreground re-sync: when the app returns to the active state (also covers "after
+  // permissions restored" and "after external change" once the user reopens the app).
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (next) => {
+      if (appState.current.match(/inactive|background/) && next === "active" && user) {
+        calendarFullSync().catch(() => {});
+        syncAndSchedule().catch(() => {});
+      }
+      appState.current = next;
+    });
+    return () => sub.remove();
   }, [user]);
 
   useEffect(() => {
@@ -56,6 +71,8 @@ function RootNav() {
       <Stack.Screen name="onboarding" />
       <Stack.Screen name="(tabs)" />
       <Stack.Screen name="calendar-connect" options={{ presentation: "modal" }} />
+      <Stack.Screen name="listen" options={{ presentation: "modal" }} />
+      <Stack.Screen name="diagnostics" options={{ presentation: "modal" }} />
       <Stack.Screen name="quick-capture" options={{ presentation: "modal" }} />
       <Stack.Screen name="notes" options={{ presentation: "modal" }} />
       <Stack.Screen name="record" options={{ presentation: "modal" }} />

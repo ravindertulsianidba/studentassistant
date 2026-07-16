@@ -332,7 +332,8 @@ async def delete_account(body: DeleteAccountIn | None = None, uid: str = Current
     for c in ["tasks", "events", "timeline", "review", "imports", "notes", "chunks",
               "audit", "prefs", "source_docs", "transcripts", "refresh_tokens",
               "commitments", "ledger", "reminders", "idempotency", "ai_usage", "uploads",
-              "calendar_connection", "calendar_links", "external_events"]:
+              "calendar_connection", "calendar_links", "external_events",
+              "listen_sessions", "device_state"]:
         await db[c].delete_many({"user_id": uid})
     await db.users.delete_one({"id": uid})
     return {"ok": True, "deleted": True}

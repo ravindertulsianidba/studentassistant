@@ -1,0 +1,32 @@
+{
+  "summary": "Phase 3C — Active Listening sessions + Diagnostics/system-health: 20/20 backend tests PASSED against the public preview URL with LIVE OpenAI. Active Listening verified: /listen/start creates a session in 'listening' with course; /listen/active echoes it; calling /listen/start again returns the SAME session (course unchanged) — single-active-session invariant holds; /pause→'paused' and /resume→'listening'; /append accumulates transcript across calls; /stop with a real assignment+exam+lab transcript sets status 'done', summary.items_detected>0 (LIVE OpenAI extraction), routes items to /review or as auto-created events/tasks, and writes reliability-ledger + timeline entries; /undo removes review items AND auto-created events/tasks, deletes the linked commitments, sets status 'undone', and returns the review count exactly to the pre-session baseline; /stop with empty transcript is a graceful no-op (status 'done', items_detected==0, chars==0). Diagnostics verified: GET /api/diagnostics?tz=America/New_York returns all required keys (auth, backend, ai_provider, notifications, calendar, microphone, active_listening, recording, uploads, processing, last_transcription, last_study_notes, timezone) and echoes the tz; POST /diagnostics/device-state {mic_permission,notif_permission,recording} is reflected on next GET (recording.active true, notifications.permission granted, microphone.permission granted); /test-backend {ok:true}; /test-ai LIVE call returned {ok:true, latency_ms:int, provider:'openai'}; /test-calendar-read returns connected+external_events_mirrored; /retry-jobs returns {ok:true, uploads_requeued, reminders_requeued}; /diagnostics/report includes recent_ledger array containing listen_* entries. Two-user isolation confirmed: user B sees no A sessions in GET /listen, GET /listen/{a_id} returns 404 for B, and B's diagnostics show recording.active=false and no notif permission while A's show granted+recording. Regression clean: /auth/dev-login, /review, /events, /tasks, /briefing all 200. Zero device-only claims made. This is backend-only testing per request.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": [], "react_native_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_listen_diagnostics_phase3c.py",
+    "/app/test_reports/pytest/phase3c_listen_diagnostics.xml"
+  ],
+  "action_items": [
+    "None blocking — Phase 3C backend (Active Listening + Diagnostics) is spec-complete.",
+    "DEVICE-ONLY items remain outside API scope: on-device audio capture, background/locked-screen recording, persistent-notification stop action, expo-background-task true background sync. These MUST be validated on a native build; do NOT mark them passed from these API tests.",
+    "Minor consideration (non-blocking): /listen/start returns the existing active session unchanged even if the caller passes a NEW course. Product-side, this is arguably correct (single-session invariant), but consider surfacing a hint field so the UI knows the requested course was ignored."
+  ],
+  "critical_code_review_comments": [
+    "routers/listen.py:start correctly enforces the single-active invariant by matching status in ['listening','paused'] and short-circuiting with `clean(active)` before creating a new doc — no ledger duplication on retries.",
+    "routers/listen.py:stop transitions status via 'processing' before hitting AI extraction, then sets 'done' with summary+created regardless of AI success/failure (ai_error is captured, not raised) — matches the 'nothing here fails silently' contract from the diagnostics module docstring.",
+    "routers/listen.py:undo removes review items, tasks, events, AND the corresponding commitments (from db.commitments) — the ledger correctly records 'listen_undone' with the removed count.",
+    "routers/diagnostics.py:diagnostics computes pending_jobs = pending_uploads + listen_sessions in 'processing' — good composite signal. Consider also including failed_uploads as a separate stalled counter if the UI ever needs to differentiate.",
+    "routers/diagnostics.py:test_ai catches broad Exception and returns {ok:false,error:...} rather than 5xx — resilient to daily-cap 429s from enforce_ai. Verified live call succeeded and returned a numeric latency_ms.",
+    "routers/diagnostics.py:test_calendar_read returns ok=connected (bool) — the field 'ok' semantically means 'the calendar is connected'; naming is fine but a future refactor could split 'ok' (endpoint worked) from 'connected' (state) for consistency with test_ai/test_backend.",
+    "Minor: routers/listen.py:stop uses transcript[:16000] as the AI prompt window — fine for lecture-length transcripts. No explicit truncation warning is added to summary; consider a summary.truncated flag if input>16000."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_listen_diagnostics_phase3c.py (new — Phase 3C backend suite, 20 tests)"
+  ],
+  "success_rate": {"backend": "100% (20/20)", "frontend": "not_tested (backend-only request)"},
+  "seed_data_creation": "Two throwaway dev-login accounts per run (TEST_p3c_<uuid8>@example.com and TEST_p3c_b_<uuid8>@example.com) plus one regression account. All sessions/commitments/review rows created by the tests are removed by the undo test, except for the final 'EMPTY' listening session (status='done', items=0) intentionally left to prove no-crash behaviour. No persistent seed data is required for reruns.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Phase 3C backend is fully green against the public preview URL with LIVE OpenAI. Extraction latency was ~1–5 s per stop; use timeout>=60s when invoking /listen/{sid}/stop. The daily AI cap can 429; the suite treats that as a skip (not a failure) on the /test-ai and /listen/stop paths. Device-only flows (on-device audio, background recording, persistent-notification stop, expo-background-task) are NOT covered here and MUST NOT be claimed as passed from API tests alone. When rerunning quickly on the same host, the in-memory rate limiter can 429 on /auth/dev-login — the suite skips gracefully in that case.",
+  "rca_of_issue": "N/A — no bugs found."
+}

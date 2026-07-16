@@ -153,3 +153,26 @@ class ExternalIngestIn(BaseModel):
 
 class CalendarReviewActionIn(BaseModel):
     approve: bool
+
+
+class ListenStartIn(BaseModel):
+    course: Optional[str] = None
+
+
+class ListenAppendIn(BaseModel):
+    text: Optional[str] = None
+    audio_uri: Optional[str] = None
+
+
+class ListenStopIn(BaseModel):
+    transcript: Optional[str] = None
+    audio_uri: Optional[str] = None
+
+
+class DeviceStateIn(BaseModel):
+    recording: Optional[bool] = None
+    active_listening: Optional[bool] = None
+    mic_permission: Optional[str] = None
+    notif_permission: Optional[str] = None
+    pending_uploads: Optional[int] = None
+    failed_uploads: Optional[int] = None

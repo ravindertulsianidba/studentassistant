@@ -16,7 +16,7 @@ import ai_service
 import vectorstore as vs
 from db import db, client
 from core import now_iso, logger
-from routers import auth, content, planner, reliability, calendar
+from routers import auth, content, planner, reliability, calendar, listen, diagnostics
 
 logging.getLogger("student-assistant")
 
@@ -50,7 +50,8 @@ async def unhandled(request: Request, exc: Exception):
     return JSONResponse(status_code=500, content={"detail": "Internal server error"})
 
 
-for r in (auth.router, content.router, planner.router, reliability.router, calendar.router):
+for r in (auth.router, content.router, planner.router, reliability.router, calendar.router,
+          listen.router, diagnostics.router):
     app.include_router(r)
 
 app.add_middleware(
@@ -88,6 +89,9 @@ async def startup():
         await db.calendar_links.create_index([("user_id", 1), ("external_id", 1)])
         await db.external_events.create_index([("user_id", 1), ("external_id", 1)], unique=True)
         await db.calendar_review.create_index([("user_id", 1), ("status", 1)])
+        await db.listen_sessions.create_index([("user_id", 1), ("status", 1)])
+        await db.listen_sessions.create_index([("user_id", 1), ("started_at", -1)])
+        await db.device_state.create_index("user_id", unique=True)
         logger.info("Indexes ready. AI_PROVIDER=%s Vector=%s Google=%s",
                     config.AI_PROVIDER, vs.enabled(), bool(config.GOOGLE_CLIENT_ID))
     except Exception as e:

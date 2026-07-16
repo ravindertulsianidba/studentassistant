@@ -124,3 +124,15 @@ export async function health() {
   const all = await Notifications.getAllScheduledNotificationsAsync();
   return { permission: perm.granted ? "granted" : "denied", scheduledOnDevice: all.length };
 }
+
+
+export async function sendTestNotification(): Promise<{ ok: boolean; reason?: string }> {
+  if (!isDevice) return { ok: false, reason: "Notifications run in the installed app, not the web preview." };
+  const perm = await ensurePermission();
+  if (!perm.granted) return { ok: false, reason: "Notification permission not granted." };
+  await Notifications.scheduleNotificationAsync({
+    content: { title: "Student Assistant", body: "Test notification — reminders are working." },
+    trigger: { seconds: 2 } as any,
+  });
+  return { ok: true };
+}

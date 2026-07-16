@@ -156,6 +156,8 @@ export default function Profile() {
           <View style={{ height: S.sm }} />
           <Btn label="Replay intro" variant="soft" icon="play-circle" onPress={replayOnboarding} testID="replay-intro-btn" />
           <View style={{ height: S.sm }} />
+          <Btn label="Diagnostics" variant="soft" icon="activity" onPress={() => router.push("/diagnostics")} testID="diagnostics-btn" />
+          <View style={{ height: S.sm }} />
           <Btn label="Sign out" variant="ghost" icon="log-out" onPress={signOut} testID="signout-btn" />
           <View style={{ height: S.sm }} />
           <Btn label="Sign out of all devices" variant="ghost" icon="shield-off" onPress={revokeAll} testID="revoke-all-btn" />
