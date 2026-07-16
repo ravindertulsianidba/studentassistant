@@ -1,5 +1,24 @@
 # Student Assistant — PRD
 
+## Implemented v8 (2026-07-16) — Monetization / entitlements / cost control
+- Two plans only: **Free** + **Student Assistant Premium** (Google Play `student_assistant_premium`,
+  base plans monthly/annual). No trials, nothing "unlimited". Backend is the entitlement authority.
+- Free one-time, non-renewing **Starter Pack** (granted at email verification): 30 audio min,
+  2 imports/10 pages, 5 AI Memory Q, 2 AI briefings. Premium 30-day cycle (300 audio/25 imports/
+  150 pages/100 memory/31 briefings/5 weekly) anchored on billing anchor (annual resets monthly too).
+- `backend/monetization.py` reserve→settle/refund metering (atomic, concurrency-safe; failed ops
+  never consume), Usage + Cost ledgers, configurable model-pricing registry, cost projection,
+  kill switches, cost alerts. Retention (`retention.py`) deletes raw audio + temp files after 24h.
+- Endpoints: `/api/billing/{status,google/verify,google/restore,google/rtdn}`,
+  `/api/usage/status`, `/api/plan/config`, `/api/monetization/event`, `/api/admin/monetization`,
+  `/api/admin/cost-projection`. Billing gated by `BILLING_ENABLED=false` (503 until Play is ready).
+- Frontend: `app/paywall.tsx` (compliant), Diagnostics **Plan & usage** card, `src/services/billing.ts`
+  (lazy native `expo-iap@4.5.1`), central 402→paywall handler in `src/api.ts`.
+- Cost projection: full-quota Premium ~$2.03, typical ~$0.71, Starter ~$0.19. Full-quota is 27% of
+  monthly net / **35.6% of annual net monthly (flagged >35%)** — recommend audio 300→240 or accept
+  (typical use 12.5%). Tests: test_monetization.py, test_retention.py, test_monetization_e2e.py — PASS.
+- See `/app/MONETIZATION.md` for architecture + remaining Play Console/Pub-Sub config.
+
 ## Implemented v7 (2026-07-16) — Production-readiness pass (staging)
 - **Google Sign-In migrated** from deprecated `expo-auth-session/providers/google` to native
   **`react-native-nitro-google-signin`** (Android Credential Manager). Lazy native-only helper

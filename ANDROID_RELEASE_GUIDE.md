@@ -4,6 +4,11 @@ The **runtime** is fully independent of Emergent (self-hosted backend + your own
 OpenAI/Google keys). You can produce the installable **APK/AAB** two ways —
 choose either; both are independent of the Emergent editor.
 
+## Monetization / billing
+See `MONETIZATION.md` for the full monetization, entitlement, cost-control and Google Play
+billing architecture plus the remaining Play Console / Pub-Sub configuration checklist.
+Keep `BILLING_ENABLED=false` until Play Console + service account + Pub/Sub are configured.
+
 ## App identity (already set in `frontend/app.json`)
 - Visible name: **Student Assistant**
 - Android package: `com.decisivlabs.studentassistant`
