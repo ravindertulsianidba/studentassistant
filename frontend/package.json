@@ -9,6 +9,7 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
+    "preflight:release": "node ./scripts/preflight-release.js",
     "lint": "expo lint"
   },
   "dependencies": {

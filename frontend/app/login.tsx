@@ -87,7 +87,7 @@ function PasswordField({ value, onChangeText, placeholder, testID, show, onToggl
 
 export default function Login() {
   const insets = useSafeAreaInsets();
-  const { signUp, signInWithPassword, resendVerification, forgotPassword, devSignIn } = useAuth();
+  const { signUp, signInWithPassword, resendVerification, forgotPassword } = useAuth();
 
   const [mode, setMode] = useState<Mode>("signin");
   const [busy, setBusy] = useState(false);
@@ -99,7 +99,6 @@ export default function Login() {
   const [pw, setPw] = useState("");
   const [pw2, setPw2] = useState("");
   const [showPw, setShowPw] = useState(false);
-  const [devEmail, setDevEmail] = useState("");
   const [cooldown, setCooldown] = useState(0);
   const timerRef = useRef<any>(null);
 
@@ -159,12 +158,6 @@ export default function Login() {
       startCooldown();
     } catch (e: any) { setErr(e.message || "Could not resend"); }
     finally { setBusy(false); }
-  };
-
-  const dev = async () => {
-    if (!devEmail.trim()) return;
-    setBusy(true); setErr("");
-    try { await devSignIn(devEmail.trim()); } catch (e: any) { setErr(e.message || "Sign-in failed"); } finally { setBusy(false); }
   };
 
   const isCheck = mode === "check-verify" || mode === "check-reset";
@@ -261,32 +254,10 @@ export default function Login() {
                   </Text>}
               </Pressable>
 
-              {mode !== "forgot" && (
+              {mode !== "forgot" && GOOGLE_ENABLED && (
                 <>
                   <View style={styles.divider}><View style={styles.hr} /><Text style={styles.or}>or</Text><View style={styles.hr} /></View>
-                  {GOOGLE_ENABLED ? (
-                    <GoogleButton onError={setErr} onBusy={setBusy} />
-                  ) : (
-                    <View style={[styles.google, { opacity: 0.6 }]} testID="google-disabled">
-                      <Feather name="log-in" size={18} color={C.onSurface} />
-                      <Text style={styles.googleTxt}>Continue with Google</Text>
-                    </View>
-                  )}
-                  {!GOOGLE_ENABLED && (
-                    <Text style={styles.note}>Google Sign-In activates in the installed app build.</Text>
-                  )}
-                </>
-              )}
-
-              {__DEV__ && (
-                <>
-                  <View style={styles.divider}><View style={styles.hr} /><Text style={styles.or}>dev-only</Text><View style={styles.hr} /></View>
-                  <Field testID="dev-email" icon="terminal" placeholder="dev@university.edu" autoCapitalize="none"
-                    keyboardType="email-address" value={devEmail} onChangeText={setDevEmail} />
-                  <Pressable testID="dev-signin" disabled={busy} onPress={dev}
-                    style={({ pressed }) => [styles.secondary, pressed && { opacity: 0.85 }]}>
-                    <Text style={styles.secondaryTxt}>Quick sign-in (dev)</Text>
-                  </Pressable>
+                  <GoogleButton onError={setErr} onBusy={setBusy} />
                 </>
               )}
             </>

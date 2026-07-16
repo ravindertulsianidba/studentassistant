@@ -53,7 +53,7 @@ function RootNav() {
   useEffect(() => {
     if (!ready) return;
     SplashScreen.hideAsync();
-    const publicRoutes = ["login", "verify-email", "reset-password"];
+    const publicRoutes = ["login", "verify-email", "reset-password", "dev-login"];
     const onPublic = publicRoutes.includes(segments[0] as string);
     const onOnboarding = segments[0] === "onboarding";
     if (!user && !onPublic) { router.replace("/login"); return; }
@@ -66,6 +66,7 @@ function RootNav() {
   return (
     <Stack screenOptions={{ headerShown: false }}>
       <Stack.Screen name="login" />
+      <Stack.Screen name="dev-login" />
       <Stack.Screen name="verify-email" />
       <Stack.Screen name="reset-password" />
       <Stack.Screen name="onboarding" />

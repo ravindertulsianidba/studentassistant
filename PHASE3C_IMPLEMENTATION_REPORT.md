@@ -81,6 +81,27 @@ local audio until confirmed; sync/ingest are idempotent so retries never duplica
     `preview` APK, `production` AAB, `production-apk` APK profiles + local gradle path).
 14. **Honest limitations** — KNOWN_LIMITATIONS.md.
 
+## 3.5 Pre-build authentication cleanup (login screen)
+- The normal login screen now shows **only** real options: **Continue with Google** (only
+  when Google client IDs are configured & functional), **Sign In** (email/password),
+  **Create Account**, **Forgot Password**. Email/password works in the web preview.
+- Removed from all user-facing environments: the dev email field, "Quick sign-in (dev)",
+  "dev-only", "Google Sign-In activates in the installed app build", and any nonfunctional
+  Google button. No environment/implementation wording is shown to students.
+- Developer login moved to a hidden internal route **`/dev-login`** guarded by **BOTH**
+  `__DEV__` **and** `EXPO_PUBLIC_ENABLE_DEV_LOGIN=true` (defaults **false**); it redirects
+  to `/login` otherwise and is not linked anywhere. Backend still requires
+  `ALLOW_INSECURE_DEV=true` and returns **404** for `/auth/dev-login` and `/auth/dev-outbox`
+  in production.
+- **Release preflight**: `cd frontend && npm run preflight:release` fails the build if
+  `EXPO_PUBLIC_ENABLE_DEV_LOGIN` or backend `ALLOW_INSECURE_DEV` is true, if the backend URL
+  is missing/not https, if a secret is bundled, if the login screen contains dev UI, or if
+  version/permissions/profiles/`.env.example` are missing. Verified: FAIL in the dev env
+  (ALLOW_INSECURE_DEV=true) and PASS in a simulated release env.
+- **Status of this cleanup:** implemented in code · automated-test passed · awaiting
+  installed-device (release-build) validation that the dev UI is absent in preview/pilot/
+  production artifacts.
+
 ## 4. Not production-ready (unchanged)
 - Live SMTP email delivery (Phase 3A) — awaiting real credentials + inbox test.
 - Provider-neutral calendar sync — awaiting physical device validation (PHASE3B_APK_PACKAGE.md).

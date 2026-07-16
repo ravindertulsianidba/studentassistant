@@ -1,0 +1,36 @@
+{
+  "summary": "Iteration 12 — Pre-build auth-screen cleanup verified end-to-end. Backend 7/7 PASSED against the public preview URL: register -> dev-outbox -> verify-email -> login succeeds for a fresh tester+<ts>@uni.edu (password 'correct horse battery staple'); bad password returns 401; /auth/forgot-password returns generic 200 for both known and unknown emails; /auth/dev-login still returns 200 in this preview (ALLOW_INSECURE_DEV=true, as expected per the review note — NOT failed). Frontend 100%: /login shows ONLY real auth UI — Sign In tab, Create Account tab, email field ([data-testid=email]), password field ([data-testid=password]), Forgot password? link ([data-testid=forgot-link]), and a single primary Sign In button ([data-testid=submit]); NO google-signin button is rendered (no EXPO_PUBLIC_GOOGLE_* client IDs are set); the forbidden testIDs 'dev-email' and 'dev-signin' are absent from the DOM; the forbidden wording 'dev-only', 'quick sign-in', and 'activates in the installed' do NOT appear anywhere on the login page. Navigating to /dev-login (EXPO_PUBLIC_ENABLE_DEV_LOGIN=false in frontend/.env) redirects to /login — devroute-email and devroute-signin are absent post-redirect. Real UI flow verified: filling the Create Account tab with a fresh email/password routes to the 'Verify your email' screen (resend testID, correct heading, correct email echo), then verifying the token via /api/auth/verify-email (200) and signing back in from the /login Sign In tab lands the user on /onboarding — matching the spec's 'reaches onboarding or the Today tab'.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "shadow* style props", "issue": "Console warning: '\"shadow*\" style props are deprecated. Use \"boxShadow\".' — non-blocking web-preview warning from RN styles. Reference: (console noise) — not scoped to a specific file in this iteration."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_login_cleanup_it12.py",
+    "/app/test_reports/pytest/it12_login_cleanup.xml"
+  ],
+  "action_items": [
+    "No blocking action items — auth-screen cleanup is spec-complete for the preview build."
+  ],
+  "critical_code_review_comments": [
+    "frontend/app/login.tsx correctly gates the Google button behind GOOGLE_ENABLED = !!(WEB_ID || ANDROID_ID || IOS_ID) so it never renders when no client IDs are configured — matches the preview state and the spec's 'no message claiming Google activates in an installed build'.",
+    "frontend/app/dev-login.tsx: DEV_LOGIN_ENABLED = __DEV__ && process.env.EXPO_PUBLIC_ENABLE_DEV_LOGIN === 'true'; falsy path returns <Redirect href='/login' /> — verified in the browser to redirect and to render no dev testIDs.",
+    "frontend/app/_layout.tsx includes 'dev-login' in the publicRoutes list, so an unauthenticated user hitting /dev-login is not bounced to /login by the auth guard before the redirect inside dev-login.tsx runs — clean separation.",
+    "backend/routers/auth.py exposes /auth/dev-outbox only when ALLOW_INSECURE_DEV=true (preview) and returns 404 in production — this iteration only relied on the preview-side behaviour to fetch the verification token, matching /app/memory/test_credentials.md.",
+    "No 'dev-only' / 'Quick sign-in' / 'activates in the installed' strings remain in login.tsx — grep-clean and browser-DOM-clean."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_login_cleanup_it12.py (new)",
+    "/app/test_reports/iteration_12.json (this report)"
+  ],
+  "success_rate": {"backend": "100% (7/7)", "frontend": "100% (all UI cleanup + dev-login redirect + full E2E signup/verify/signin -> onboarding)"},
+  "seed_data_creation": "Two ephemeral email/password accounts per run: one from the pytest suite (tester+<ts>_<uuid6>@uni.edu) and one from the Playwright end-to-end flow (tester+it12ui_<ts>@uni.edu). Both are verified via the MockMailer dev-outbox and then logged in. No persistent seed data.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Auth-screen cleanup + email/password E2E is green on the preview URL. EXPO_PUBLIC_ENABLE_DEV_LOGIN=false and no EXPO_PUBLIC_GOOGLE_* client IDs are set, so both the on-screen dev quick-sign-in and the Google button are absent by design. /api/auth/dev-outbox is available here because ALLOW_INSECURE_DEV=true — do NOT toggle this in the preview. When re-running, use a fresh tester+<ts>@uni.edu each time to avoid the 'already registered' path; the resend cooldown is 5 min server-side. After successful sign-in, new users land on /onboarding (four-step flow) before reaching /(tabs).",
+  "rca_of_issue": "N/A — no bugs found; this run confirms the fix."
+}

@@ -6,18 +6,27 @@
 > (`PHASE3_EVIDENCE_TEMPLATE.md`).
 
 ## 1. Getting the APK
-No binary is committed. Produce a side-loadable APK:
+No binary is committed. **Run the release preflight first**, then build:
+```bash
+cd frontend
+cp .env.example .env            # then fill EXPO_PUBLIC_BACKEND_URL (+ Google IDs if used)
+npm run preflight:release       # MUST print "RESULT: PASS" before building
+```
+Then produce a side-loadable APK:
 - **Emergent:** click **Publish** (top-right) → Android build → download `.apk`.
 - **Independent (EAS):**
   ```bash
-  cd frontend
+  npm install -g eas-cli && eas login
   eas build --platform android --profile preview        # internal-distribution APK
-  # signed standalone APK:  --profile production-apk
-  # Play Store AAB:         --profile production
+  # signed standalone APK:  eas build --platform android --profile production-apk
+  # Play Store AAB:         eas build --platform android --profile production
   ```
-  Download from the EAS build URL / Expo dashboard → Builds. Full details + signing in
-  `BUILD_AND_SIGNING.md`. Build profiles live in `frontend/eas.json`
+  Download from the EAS build URL / Expo dashboard → Builds. Full signing details in
+  `BUILD_AND_SIGNING.md`. Profiles in `frontend/eas.json`
   (`preview`=APK, `production`=AAB, `production-apk`=APK).
+
+> The preflight FAILS the release if `EXPO_PUBLIC_ENABLE_DEV_LOGIN=true` or backend
+> `ALLOW_INSECURE_DEV=true`, so developer login can never ship in a release build.
 
 ## 2. Install (Android)
 1. Transfer the `.apk` to the device or open the build link on the device.
