@@ -122,9 +122,9 @@ def _is_premium_active(ent: Optional[dict]) -> bool:
     return True
 
 
-async def _premium_cycle_window(ent: dict) -> tuple[str, str]:
+async def _premium_cycle_window(ent: dict, anchor_override: str = "") -> tuple[str, str]:
     """30-day window anchored on the billing anchor; annual plans still reset every 30 days."""
-    anchor = ent.get("billing_anchor") or ent.get("started_at") or _iso(_utcnow())
+    anchor = anchor_override or ent.get("billing_anchor") or ent.get("started_at") or _iso(_utcnow())
     try:
         a = datetime.fromisoformat(anchor)
         if a.tzinfo is None:
@@ -139,22 +139,48 @@ async def _premium_cycle_window(ent: dict) -> tuple[str, str]:
     return _iso(start), _iso(end)
 
 
+async def _active_admin_grant(uid: str) -> Optional[dict]:
+    """Return an active complimentary/admin entitlement grant for the user, if any.
+    Sources: admin_grant | promotional | internal_test. Coexists with google_play."""
+    now = _iso(_utcnow())
+    grant = await db.entitlement_grants.find_one({
+        "user_id": uid, "status": "active", "revoked_at": None,
+        "$and": [
+            {"$or": [{"starts_at": None}, {"starts_at": {"$lte": now}}]},
+            {"$or": [{"expires_at": None}, {"expires_at": {"$gt": now}}]},
+        ],
+    }, {"_id": 0})
+    return grant
+
+
 async def resolve_entitlement(uid: str) -> dict:
-    """Single source of truth for a user's current plan, cycle and allowances."""
+    """Single source of truth. Effective access = max of ALL valid entitlement sources
+    (Google Play + admin/complimentary grants). Sources coexist independently."""
     ent = await _get_entitlement_doc(uid)
-    if _is_premium_active(ent):
+    play_active = _is_premium_active(ent)
+    grant = await _active_admin_grant(uid)
+
+    if play_active:
         start, end = await _premium_cycle_window(ent)
-        allow = premium_allowances()
         return {"plan": "premium", "state": ent.get("state", "active"),
+                "source": "google_play",
                 "cycle_type": "premium", "cycle_start": start, "cycle_end": end,
-                "allowances": allow, "renews": ent.get("state") != "cancelled_active_until_period_end",
+                "allowances": premium_allowances(),
+                "renews": ent.get("state") != "cancelled_active_until_period_end",
                 "current_period_end": ent.get("current_period_end")}
+    if grant:
+        anchor = grant.get("usage_cycle_anchor") or grant.get("starts_at") or grant.get("created_at")
+        start, end = await _premium_cycle_window({}, anchor_override=anchor or _iso(_utcnow()))
+        return {"plan": "premium", "state": "active",
+                "source": grant.get("source", "admin_grant"),
+                "cycle_type": "premium", "cycle_start": start, "cycle_end": end,
+                "allowances": premium_allowances(), "renews": False,
+                "current_period_end": grant.get("expires_at")}
     # Free (default). Starter Pack is a lifetime, non-renewing cycle.
     state = (ent or {}).get("state", "free")
     if state in ("cancelled_active_until_period_end", "grace_period") and ent:
-        # premium lapsed to free after period end
         state = "expired"
-    return {"plan": "free", "state": state if ent else "free",
+    return {"plan": "free", "state": state if ent else "free", "source": "free",
             "cycle_type": "starter", "cycle_start": None, "cycle_end": None,
             "allowances": free_allowances(), "renews": False, "current_period_end": None}
 
@@ -194,7 +220,10 @@ async def get_usage_status(uid: str) -> dict:
             "pct": (round(min(100, (u / total) * 100)) if total else 100),
         }
     return {
-        "plan": ent["plan"], "state": ent["state"],
+        "plan": ent["plan"], "state": ent["state"], "source": ent.get("source", "free"),
+        "source_label": {"google_play": "Google Play", "admin_grant": "Complimentary Premium",
+                          "promotional": "Complimentary Premium", "internal_test": "Complimentary Premium",
+                          "free": "Free"}.get(ent.get("source", "free"), "Free"),
         "cycle_type": ent["cycle_type"], "cycle_start": ent["cycle_start"],
         "cycle_end": ent["cycle_end"], "renews": ent["renews"],
         "current_period_end": ent["current_period_end"],

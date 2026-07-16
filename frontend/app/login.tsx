@@ -167,7 +167,7 @@ export default function Login() {
           <Image source={{ uri: HERO }} style={StyleSheet.absoluteFill} contentFit="cover" />
           <LinearGradient colors={["rgba(24,28,26,0.3)", "rgba(24,28,26,0.95)"]} style={StyleSheet.absoluteFill} />
           <View style={[styles.heroContent, { paddingTop: insets.top + S.lg }]}>
-            <View style={styles.logo}><Feather name="feather" size={20} color={C.onBrand} /></View>
+            <Image source={require("@/assets/images/icon.png")} style={styles.logo} contentFit="cover" />
             <Text style={styles.title}>Student Assistant</Text>
             <Text style={styles.tagline}>Capture it once — never forget it again.</Text>
           </View>
@@ -201,7 +201,7 @@ export default function Login() {
               {info ? <Text style={styles.info}>{info}</Text> : null}
 
               {mode === "forgot" && (
-                <Text style={styles.lead}>Enter your email and we'll send you a link to reset your password.</Text>
+                <Text style={styles.lead}>Enter your email and we&apos;ll send you a link to reset your password.</Text>
               )}
 
               {mode === "signup" && (
@@ -303,7 +303,7 @@ const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: C.surface },
   hero: { height: 230, justifyContent: "flex-end" },
   heroContent: { padding: S.xl },
-  logo: { width: 40, height: 40, borderRadius: R.md, backgroundColor: C.brand, alignItems: "center", justifyContent: "center", marginBottom: S.sm },
+  logo: { width: 60, height: 60, borderRadius: R.lg, marginBottom: S.sm },
   title: { fontFamily: F.display, fontSize: 26, color: "#fff" },
   tagline: { fontFamily: F.body, fontSize: 14, color: "rgba(255,255,255,0.85)", marginTop: S.xs, lineHeight: 20 },
   body: { flex: 1, padding: S.xl, gap: S.md },

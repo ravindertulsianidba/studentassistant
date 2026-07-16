@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "Student Assistant",
-    "slug": "frontend",
+    "slug": "studentassistant",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -26,7 +26,7 @@
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#4F6B58"
+        "backgroundColor": "#2E3F32"
       },
       "edgeToEdgeEnabled": true,
       "versionCode": 1,
@@ -55,7 +55,7 @@
           "image": "./assets/images/splash-image.png",
           "imageWidth": 200,
           "resizeMode": "contain",
-          "backgroundColor": "#000000"
+          "backgroundColor": "#2E3F32"
         }
       ],
       [
@@ -67,7 +67,8 @@
       [
         "expo-notifications",
         {
-          "color": "#4F6B58"
+          "icon": "./assets/images/notification-icon.png",
+          "color": "#2E3F32"
         }
       ],
       [
@@ -89,6 +90,11 @@
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "eas": {
+        "projectId": "e65acdac-aafc-4757-8399-cc406ae598a9"
+      }
     }
   }
 }

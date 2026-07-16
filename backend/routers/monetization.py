@@ -50,7 +50,8 @@ class EventIn(BaseModel):
 async def monetization_event(body: EventIn, uid: str = CurrentUser):
     """Record a sanitized paywall/purchase funnel event (no content, no payment data)."""
     allowed = {"paywall_impression", "purchase_start", "purchase_complete", "purchase_fail",
-               "restore_attempt", "starter_completed", "upgrade_opened"}
+               "restore_attempt", "starter_completed", "upgrade_opened",
+               "nudge_shown", "nudge_dismissed"}
     if body.kind not in allowed:
         raise HTTPException(status_code=400, detail="Unknown event kind.")
     await db.monetization_events.insert_one({

@@ -103,9 +103,16 @@ else ok.push(`Android package = ${LOCKED_PACKAGE}`);
 if ((expo.ios || {}).bundleIdentifier !== LOCKED_PACKAGE)
   fail.push(`app.json expo.ios.bundleIdentifier must be "${LOCKED_PACKAGE}" (got "${(expo.ios || {}).bundleIdentifier}").`);
 else ok.push(`iOS bundleIdentifier = ${LOCKED_PACKAGE}`);
-if (expo.scheme !== LOCKED_SCHEME)
+if expo.scheme !== LOCKED_SCHEME)
   fail.push(`app.json expo.scheme must be "${LOCKED_SCHEME}" (got "${expo.scheme}").`);
 else ok.push(`App scheme = ${LOCKED_SCHEME}`);
+// Locked slug + EAS project id.
+if (expo.slug !== "studentassistant")
+  fail.push(`app.json expo.slug must be "studentassistant" (got "${expo.slug}").`);
+else ok.push("Expo slug = studentassistant");
+if ((((expo.extra || {}).eas) || {}).projectId !== "e65acdac-aafc-4757-8399-cc406ae598a9")
+  fail.push("app.json expo.extra.eas.projectId must be the permanent EAS project id.");
+else ok.push("EAS projectId locked");
 
 if (!expo.version) fail.push("app.json expo.version (versionName) is missing.");
 else ok.push(`versionName = ${expo.version}`);
