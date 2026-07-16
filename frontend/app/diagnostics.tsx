@@ -1,9 +1,10 @@
 import { useCallback, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Platform, Share, Alert } from "react-native";
+import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Platform, Share, Alert, Modal } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
 import { Feather } from "@expo/vector-icons";
 import * as Calendar from "expo-calendar";
+import Constants from "expo-constants";
 import { AudioModule } from "expo-audio";
 import { C, S, R, F } from "@/src/theme";
 import { api } from "@/src/api";
@@ -30,6 +31,8 @@ export default function Diagnostics() {
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState("");
   const [log, setLog] = useState<string>("");
+  const [bundle, setBundle] = useState<any>(null);
+  const [bundleText, setBundleText] = useState("");
 
   const load = useCallback(async () => {
     let mic = "unavailable", notif = "unavailable", cal = "unavailable", scheduled = 0;
@@ -77,6 +80,24 @@ export default function Diagnostics() {
     await Share.share({ message: JSON.stringify(rep, null, 2) });
     return "✓ Diagnostic report shared";
   });
+
+  const openSupportBundle = async () => {
+    setRunning("bundle"); setLog("");
+    try {
+      const b = await api.get(`/diagnostics/support-bundle?tz=${encodeURIComponent(TZ)}`);
+      const enriched = {
+        app_version: Constants.expoConfig?.version ?? "unknown",
+        platform: Platform.OS,
+        os_version: String(Platform.Version),
+        permissions: { microphone: dev.mic, notifications: dev.notif, calendar: dev.cal },
+        ...b,
+      };
+      setBundle(enriched);
+      setBundleText(JSON.stringify(enriched, null, 2));
+    } catch (e: any) { setLog("✕ " + (e?.message || "Could not build support bundle")); }
+    finally { setRunning(""); }
+  };
+  const shareBundle = async () => { await Share.share({ message: bundleText }); setBundle(null); };
 
   const tone = (ok: boolean) => (ok ? "success" : "error");
   const permTone = (p: string) => (p === "granted" ? "success" : p === "unavailable" ? "info" : "warning");
@@ -140,11 +161,29 @@ export default function Diagnostics() {
               <Btn label="Test microphone" variant="soft" icon="mic" onPress={testMic} testID="diag-test-mic" />
               <Btn label="Retry failed jobs" variant="soft" icon="rotate-cw" onPress={retry} testID="diag-retry" />
               <Btn label="Export diagnostic report" variant="soft" icon="download" onPress={exportReport} testID="diag-export" />
+              <Btn label="Copy Support Bundle" variant="soft" icon="clipboard" onPress={openSupportBundle} testID="diag-support-bundle" />
             </View>
             {running ? <View style={styles.runRow}><ActivityIndicator color={C.brand} /><Text style={styles.note}>Running {running}…</Text></View> : null}
           </>
         ) : <Text style={styles.note}>Could not load diagnostics.</Text>}
       </ScrollView>
+
+      <Modal visible={!!bundle} animationType="slide" transparent onRequestClose={() => setBundle(null)}>
+        <View style={styles.modalBg}>
+          <View style={[styles.modalCard, { paddingBottom: insets.bottom + S.lg }]}>
+            <View style={styles.modalHead}>
+              <Text style={styles.hTitle}>Support bundle preview</Text>
+              <Pressable onPress={() => setBundle(null)} hitSlop={10} testID="bundle-cancel"><Feather name="x" size={22} color={C.onSurface} /></Pressable>
+            </View>
+            <Text style={styles.note}>Review what will be shared. This contains only IDs, status codes and timestamps — no passwords, tokens, audio, transcripts, documents, or email content.</Text>
+            <ScrollView style={styles.bundleBox}><Text style={styles.bundleTxt} testID="bundle-preview">{bundleText}</Text></ScrollView>
+            <View style={styles.actions}>
+              <Btn label="Share via device" icon="share-2" onPress={shareBundle} testID="bundle-share" />
+              <Btn label="Cancel" variant="ghost" onPress={() => setBundle(null)} testID="bundle-cancel-btn" />
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -160,4 +199,9 @@ const styles = StyleSheet.create({
   log: { fontFamily: F.bodyMed, fontSize: 13, color: C.onSurface, backgroundColor: C.surface3, padding: S.md, borderRadius: R.md, marginBottom: S.md },
   runRow: { flexDirection: "row", alignItems: "center", gap: S.sm, marginTop: S.md },
   note: { fontFamily: F.body, fontSize: 13, color: C.onSurface3, textAlign: "center", marginTop: S.sm },
+  modalBg: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
+  modalCard: { backgroundColor: C.surface, borderTopLeftRadius: R.lg, borderTopRightRadius: R.lg, padding: S.lg, maxHeight: "85%" },
+  modalHead: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: S.sm },
+  bundleBox: { backgroundColor: C.surface3, borderRadius: R.md, padding: S.md, marginVertical: S.md, maxHeight: 360 },
+  bundleTxt: { fontFamily: Platform.select({ ios: "Menlo", android: "monospace", default: "monospace" }), fontSize: 11, color: C.onSurface2 },
 });

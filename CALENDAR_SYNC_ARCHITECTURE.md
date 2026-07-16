@@ -74,11 +74,13 @@ For a linked event changed externally:
   occur without duplicating.
 
 ## 8. Background / ongoing sync
-`fullSync()` runs: on **app open** (`app/_layout.tsx` when a user session exists), after
-**connecting a calendar**, and on demand (**Sync now** in the Connect screen). It reads +
-ingests, writes pending (if read_write), and reports status. Edits made in-app to SA
-events flow out on the next sync. (Provider push/delta detection is used where the
-platform supports it; otherwise interval/app-open polling.)
+`fullSync()` runs: on **app open** (`app/_layout.tsx` when a user session exists), when the
+app returns to the foreground (`AppState` active — the **immediate** reconciliation
+mechanism), after **connecting a calendar**, and on demand (**Sync now**). In addition,
+`expo-background-task` performs **periodic best-effort background synchronization, subject
+to Android OS scheduling and battery restrictions** (device-only; NOT real-time, NOT
+immediate, NOT guaranteed at exact intervals, and NOT guaranteed to detect external changes
+while the app stays closed). Edits made in-app to SA events flow out on the next sync.
 
 ## 9. User-facing sync states
 `connected` · `read_only` · `syncing` · `sync_failed` (with reason) · `permission_revoked`

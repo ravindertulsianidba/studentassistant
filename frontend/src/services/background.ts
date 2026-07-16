@@ -1,10 +1,15 @@
 /**
- * Phase 3C — TRUE background synchronization (device-only).
+ * Phase 3C — periodic best-effort background synchronization (device-only).
  *
  * Uses expo-background-task (OS-scheduled) to run calendar + reminder sync while the app
- * is NOT in the foreground. The OS decides exact timing (typically >= 15 min) and will
- * re-run the registered task after device restart. Foreground triggers (app open /
- * returning to active / after permission restore) are handled separately in _layout.
+ * is NOT in the foreground. This is **best-effort and subject to the Android operating
+ * system's scheduling and battery restrictions** — it is NOT real-time, NOT immediate,
+ * NOT guaranteed to run at exact intervals, and does NOT guarantee external-change
+ * detection while the app stays closed. The OS decides timing (typically >= 15 min) and
+ * re-runs the task after device restart when it chooses to.
+ *
+ * The IMMEDIATE reconciliation mechanism is foreground AppState sync (see _layout.tsx);
+ * this background task only SUPPLEMENTS it.
  *
  * NOTE: background execution CANNOT be validated in Expo Go or the web preview — it
  * requires an installed development/production build.

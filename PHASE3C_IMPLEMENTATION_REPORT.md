@@ -6,13 +6,15 @@ _Reliability, Active Listening, Diagnostics, background sync · June 2026_
 - **Previously**, sync ran only "on app open" — that is a **foreground** trigger, **not**
   background sync. This has been corrected.
 - **Now implemented (`src/services/background.ts`)** using **`expo-background-task`** +
-  `expo-task-manager`: an OS-scheduled task (`minimumInterval` 15 min) runs
-  `calendar.fullSync()` + `notifications.syncAndSchedule()` **while the app is closed**, and
-  the OS **re-runs it after device restart**.
-- **Foreground triggers** (in `app/_layout.tsx`): on app open, on sign-in, and on
-  `AppState` returning to `active` (covers "after permission restored" and "after external
-  change" once reopened). After a failed sync, status is set `sync_failed`; the next
-  foreground/background pass retries (idempotent upserts).
+  `expo-task-manager`: **periodic best-effort background synchronization, subject to the
+  Android operating-system scheduling and battery restrictions.** It runs
+  `calendar.fullSync()` + `notifications.syncAndSchedule()` while the app is closed, and the
+  OS re-runs it after device restart when it chooses to. It is **NOT** real-time, **NOT**
+  immediate, does **NOT** guarantee exact-interval execution, and does **NOT** guarantee
+  external-change detection while the app stays closed.
+- **Immediate reconciliation** is the **foreground AppState** sync (in `app/_layout.tsx`):
+  on app open, on sign-in, and when the app returns to `active`. Background sync only
+  **supplements** this; it is not represented as guaranteed real-time sync.
 - ⚠️ **Background execution is DEVICE-ONLY** — it cannot be validated in Expo Go or web.
   Marked accordingly in KNOWN_LIMITATIONS.md.
 

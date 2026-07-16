@@ -8,9 +8,10 @@
 - **Diagnostics** (`routers/diagnostics.py`, `app/diagnostics.tsx`): full system-health
   aggregation + safe actions (test notification/backend/AI/calendar-read/test-event/mic,
   retry jobs, export report) + device-state reporting.
-- **True background sync** (`src/services/background.ts`): expo-background-task runs
-  calendar+reminder sync while app closed and after reboot (DEVICE-ONLY). Foreground
-  re-sync on AppState active. Corrected earlier "app-open = background" misstatement.
+- **Periodic best-effort background sync** (`src/services/background.ts`): expo-background-task
+  runs calendar+reminder sync while app closed and after reboot — **subject to Android OS
+  scheduling and battery restrictions; NOT real-time / immediate / guaranteed** (DEVICE-ONLY).
+  Immediate reconciliation is the foreground AppState sync; background only supplements it.
 - Entry points added within the 5-tab nav (NO Calendar tab): Active Listening + Record from
   Capture; Diagnostics + Connect Calendar in Settings.
 - **Build**: `eas.json` has preview(APK)/production(AAB)/production-apk(APK); docs

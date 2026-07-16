@@ -25,6 +25,15 @@ The backend contract, reconciliation, dedup, isolation and Today logic are verif
   transitions on a device.
 - Real network-retry behavior on the device.
 
+### Background synchronization — best-effort only
+Background calendar/reminder sync (`expo-background-task`) is **periodic best-effort
+synchronization, subject to the Android operating-system scheduling and battery
+restrictions**. It is **NOT** real-time, **NOT** immediate, does **NOT** run at guaranteed
+exact intervals, and does **NOT** guarantee external-change detection while the app remains
+closed. The immediate reconciliation mechanism is the **foreground AppState sync**;
+background sync only supplements it. Background execution is DEVICE-ONLY and unverified on
+web/Expo Go.
+
 ### Provider visibility caveat
 If a provider's calendar is **not** exposed through the Android device calendar provider
 (some Exchange/EAS or restricted enterprise accounts), Student Assistant cannot see it.

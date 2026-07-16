@@ -126,3 +126,43 @@ async def report(tz: str = "UTC", uid: str = CurrentUser):
     ledger = await db.ledger.find({"user_id": uid}, {"_id": 0}).sort("ts", -1).to_list(50)
     diag["recent_ledger"] = ledger
     return diag
+
+
+# Fields safe to expose in a shareable support bundle. Anything that could carry private
+# academic content (titles, notes, transcripts, emails, tokens) is intentionally excluded.
+_LEDGER_SAFE = ("ts", "action", "entity_type", "entity_id", "from_state", "to_state", "actor")
+
+
+@router.get("/diagnostics/support-bundle")
+async def support_bundle(tz: str = "UTC", uid: str = CurrentUser):
+    """Sanitized diagnostics for QA/pilot support. Contains only IDs, status codes and
+    timestamps — never passwords, tokens, API keys, SMTP creds, audio, transcripts,
+    documents, email content, or other users' data."""
+    diag = await diagnostics(tz=tz, uid=uid)
+    raw = await db.ledger.find({"user_id": uid}, {"_id": 0}).sort("ts", -1).to_list(40)
+    recent_ledger = [{k: e.get(k) for k in _LEDGER_SAFE} for e in raw]
+    recent_errors = [
+        {"ts": e.get("ts"), "action": e.get("action"), "entity_type": e.get("entity_type")}
+        for e in raw if str(e.get("action", "")).endswith(("_failed", "_revoked"))
+    ]
+    return {
+        "generated_at": diag["generated_at"],
+        "note": "Sanitized support bundle — IDs/status/timestamps only. No private content.",
+        "auth": {"ok": diag["auth"]["ok"], "user_id": uid},
+        "backend": diag["backend"],
+        "ai_provider": diag["ai_provider"],
+        "notifications": {"scheduled": diag["notifications"]["scheduled"],
+                          "failed": diag["notifications"]["failed"],
+                          "permission": diag["notifications"]["permission"]},
+        "calendar": diag["calendar"],
+        "microphone": diag["microphone"],
+        "active_listening": {"status": diag["active_listening"]["status"]},
+        "recording": diag["recording"],
+        "uploads": diag["uploads"],
+        "processing": diag["processing"],
+        "last_transcription": diag["last_transcription"],
+        "last_study_notes": diag["last_study_notes"],
+        "timezone": diag["timezone"],
+        "recent_ledger": recent_ledger,
+        "recent_errors": recent_errors,
+    }
