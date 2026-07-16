@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { View, Text, StyleSheet, TextInput, Pressable, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -24,7 +24,7 @@ function scorePassword(pw: string) {
 export default function ResetPassword() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { resetPassword } = useAuth();
+  const { resetPassword, checkResetToken } = useAuth();
   const { token } = useLocalSearchParams<{ token?: string }>();
   const [pw, setPw] = useState("");
   const [pw2, setPw2] = useState("");
@@ -32,7 +32,25 @@ export default function ResetPassword() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [done, setDone] = useState(false);
+  const [check, setCheck] = useState<"checking" | "valid" | "invalid">("checking");
   const strength = useMemo(() => scorePassword(pw), [pw]);
+
+  // Validate the token on load so a used/expired/invalid link never shows the form.
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      if (!token) { if (alive) setCheck("invalid"); return; }
+      try {
+        const r = await checkResetToken(String(token));
+        if (alive) setCheck(r?.valid ? "valid" : "invalid");
+      } catch {
+        // On a network/validation error, be safe and treat as invalid.
+        if (alive) setCheck("invalid");
+      }
+    })();
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
 
   const submit = async () => {
     setErr("");
@@ -41,9 +59,43 @@ export default function ResetPassword() {
     if (pw !== pw2) { setErr("Passwords don't match."); return; }
     setBusy(true);
     try { await resetPassword(String(token), pw); setDone(true); }
-    catch (e: any) { setErr(e.message || "Could not reset password."); }
+    catch (e: any) {
+      const msg = e.message || "Could not reset password.";
+      setErr(msg);
+      // Second layer: if the backend rejects the token, switch to the invalid state.
+      if (/already been used|expired|invalid reset link/i.test(msg)) setCheck("invalid");
+    }
     finally { setBusy(false); }
   };
+
+  if (check === "checking") {
+    return (
+      <View style={[styles.root, { paddingTop: insets.top + S.xxl, justifyContent: "center" }]} testID="reset-checking">
+        <View style={{ alignItems: "center", gap: S.md }}>
+          <ActivityIndicator size="large" color={C.brand} />
+          <Text style={styles.sub}>Checking your reset link…</Text>
+        </View>
+      </View>
+    );
+  }
+
+  if (check === "invalid") {
+    return (
+      <View style={[styles.root, { paddingTop: insets.top + S.xxl, justifyContent: "center" }]} testID="reset-invalid">
+        <View style={{ alignItems: "center", gap: S.md }}>
+          <View style={[styles.icon, { backgroundColor: "#F6E7E7" }]}>
+            <Feather name="alert-circle" size={30} color={C.error} />
+          </View>
+          <Text style={styles.title}>Link no longer valid</Text>
+          <Text style={styles.sub}>This reset link has already been used or is no longer valid.</Text>
+          <Pressable testID="invalid-go-signin" onPress={() => router.replace("/login")}
+            style={({ pressed }) => [styles.btn, pressed && { opacity: 0.85 }]}>
+            <Text style={styles.btnTxt}>Back to sign in</Text>
+          </Pressable>
+        </View>
+      </View>
+    );
+  }
 
   if (done) {
     return (

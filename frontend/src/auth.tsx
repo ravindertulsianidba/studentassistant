@@ -21,6 +21,7 @@ type AuthCtx = {
   resendVerification: (email: string) => Promise<void>;
   forgotPassword: (email: string) => Promise<void>;
   resetPassword: (token: string, password: string) => Promise<void>;
+  checkResetToken: (token: string) => Promise<{ valid: boolean; reason: string | null }>;
   devSignIn: (email: string) => Promise<void>;
   signOut: () => Promise<void>;
   revokeAllSessions: () => Promise<void>;
@@ -90,6 +91,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const resendVerification = async (email: string) => { await api.post("/auth/resend-verification", { email }); };
   const forgotPassword = async (email: string) => { await api.post("/auth/forgot-password", { email }); };
   const resetPassword = async (token: string, password: string) => { await api.post("/auth/reset-password", { token, password }); };
+  const checkResetToken = async (token: string): Promise<{ valid: boolean; reason: string | null }> => {
+    return await api.post("/auth/check-reset-token", { token });
+  };
   const devSignIn = async (email: string) => {
     const data = await api.post("/auth/dev-login", { email });
     await afterLogin(data);
@@ -114,7 +118,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   return (
     <Ctx.Provider value={{ ready, user, onboarded, completeOnboarding, replayOnboarding,
       signInWithGoogleToken, signUp, signInWithPassword,
-      verifyEmail, resendVerification, forgotPassword, resetPassword,
+      verifyEmail, resendVerification, forgotPassword, resetPassword, checkResetToken,
       devSignIn, signOut, revokeAllSessions, deleteAccount }}>
       {children}
     </Ctx.Provider>

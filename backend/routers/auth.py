@@ -58,7 +58,10 @@ async def _recent_token(email: str, purpose: str, cooldown_s: int) -> bool:
                                          sort=[("created_at", -1)])
     if not last:
         return False
-    return (_utcnow() - last["created_at"]).total_seconds() < cooldown_s
+    created = last["created_at"]
+    if created.tzinfo is None:  # MongoDB returns tz-naive datetimes.
+        created = created.replace(tzinfo=timezone.utc)
+    return (_utcnow() - created).total_seconds() < cooldown_s
 
 
 async def _consume_token(raw: str, purpose: str):
@@ -75,6 +78,21 @@ async def _consume_token(raw: str, purpose: str):
         return None, "expired"
     await db.auth_tokens.update_one({"_id": row["_id"]}, {"$set": {"used_at": _utcnow()}})
     return row["email"], None
+
+
+async def _peek_token(raw: str, purpose: str):
+    """Non-consuming validity check. Returns None if valid, else 'invalid'|'used'|'expired'."""
+    row = await db.auth_tokens.find_one({"token_hash": security.token_hash(raw), "purpose": purpose})
+    if not row:
+        return "invalid"
+    if row.get("used_at"):
+        return "used"
+    exp = row["expires_at"]
+    if exp.tzinfo is None:
+        exp = exp.replace(tzinfo=timezone.utc)
+    if exp < _utcnow():
+        return "expired"
+    return None
 
 
 async def _send_verification(email: str, name: str | None):
@@ -210,6 +228,15 @@ async def forgot_password(body: ForgotPasswordIn, request: Request):
                 f'<p>We received a request to reset your password. This link expires in '
                 f'{config.RESET_TOKEN_HOURS} hour(s).</p><p><a href="{link}">Reset password</a></p>')
     return {"message": GENERIC_ACTION_OK}
+
+
+@router.post("/auth/check-reset-token")
+async def check_reset_token(body: VerifyEmailIn, request: Request):
+    """Non-consuming validity check so the reset screen can hide the form for a
+    used/expired/invalid link before submission. Does NOT mark the token used."""
+    rate_limit(request, "reset", 30)
+    reason = await _peek_token(body.token, "reset_password")
+    return {"valid": reason is None, "reason": reason}
 
 
 @router.post("/auth/reset-password")

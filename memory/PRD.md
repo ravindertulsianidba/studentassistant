@@ -1,5 +1,25 @@
 # Student Assistant — PRD
 
+## Implemented v7 (2026-07-16) — Production-readiness pass (staging)
+- **Google Sign-In migrated** from deprecated `expo-auth-session/providers/google` to native
+  **`react-native-nitro-google-signin`** (Android Credential Manager). Lazy native-only helper
+  `src/services/googleSignin.ts` (never loaded on web/Expo Go). App reads ONLY the Web client ID;
+  Android client resolved via package + SHA-1. No Firebase / google-services.json / client secret.
+  Config plugin in app.json (`iosUrlScheme` = reversed Web client id placeholder for Android builds).
+  Backend `/auth/google` unchanged (verifies audience vs `GOOGLE_CLIENT_ID` = Web client id).
+- **Locked prod identity**: package/bundle `com.decisivlabs.studentassistant`, scheme `studentassistant`,
+  backend URL + Web client id pinned in `eas.json` profile env; preflight guards identity + plugin.
+- **Staging env**: `APP_ENV=staging`, `ALLOW_INSECURE_DEV=false`, dev-login/dev-outbox return 404,
+  MockMailer disabled (SmtpMailer via Gmail), OpenAI live (funded key). JWT_SECRET rotated.
+- **Reset screen hardening**: new non-consuming `POST /auth/check-reset-token`; `reset-password.tsx`
+  validates the token on load and shows an invalid-link state (no form) for used/expired/invalid
+  links, with backend submit as a 2nd layer. Test: `tests/test_reset_token_check.py`.
+- **Bug fix**: `_recent_token` crashed (tz-aware minus tz-naive Mongo datetime) whenever a prior
+  token existed → 500 on register-resend / resend-verification / 2nd forgot-password. Normalized.
+- Diagnostics: sanitized **Test Google Sign-In** action. Validation (sanitized): OpenAI 200,
+  SMTP AUTH ok, real verify + reset emails delivered & single-use enforced, preflight PASS,
+  no secrets in mobile bundle. Blocked before this pass: Gmail App Password (now provided).
+
 ## Implemented v6 (2026-07-16) — Phase 3C: Reliability, Active Listening, Diagnostics
 - **Active Listening** (`routers/listen.py`, `app/listen.tsx`): explicit start, single active
   session, listening/paused states, elapsed timer + audio meter, pause/resume/stop, device
