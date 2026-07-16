@@ -1,28 +1,46 @@
-# Known Limitations & Status — Student Assistant
+# Known Limitations
 
-Status legend: ✅ implemented & tested here · 🔑 implemented, needs production credentials · 📱 implemented in code, requires a real Android build to verify · 🟡 partial · ⛔ not implemented.
+_Student Assistant · updated for Phase 3A (Auth) + Phase 3B (Calendar) · June 2026_
 
-## Backend / server-side (verifiable in this environment)
-- ✅ Provider-independent AI layer (OpenAI) — Emergent runtime removed (`emergentintegrations`/`litellm` uninstalled; no `EMERGENT_LLM_KEY` in code).
-- ✅ Auth + per-user data isolation across all entities; 2-user isolation enforced; public delete-all removed; account deletion + export.
-- ✅ Security: restricted CORS (env), rate limiting, file size/type validation, sanitized errors, hashed refresh tokens, DB indexes, fail-fast config.
-- ✅ Risk-based AI Inbox routing, relationship detection + deadline-change audit history, source-grounded chunked search with citations, briefing/evening/weekly reviews, course workspaces.
-- 🔑 Live AI (capture/import/notes/search/transcribe) requires `OPENAI_API_KEY`. Returns a clean `503` when unset.
-- 🔑 Real Google Sign-In requires `GOOGLE_CLIENT_ID`. Preview uses `/auth/dev-login` (disabled in prod).
+## Google Sign-In — classification
+- **Implemented in code**: ✅ (`/api/auth/google` + Expo `expo-auth-session/providers/google`).
+- **Emulator tested**: ❌ not verified.
+- **Real-device tested**: ❌ not verified.
+- **Awaiting real-device validation**: ✅ — Google OAuth requires an installed build with
+  the configured client IDs; it cannot complete in the web preview / Expo Go reliably.
 
-## Mobile / native (implemented in code — require a real dev/release build to VERIFY; not testable in Expo Go / web preview)
-See **PHASE2_STATUS.md** for the item-by-item verification matrix.
-- 📱 Active Listening: `app/record.tsx` records via `expo-audio` with `UIBackgroundModes:["audio"]` (iOS) and `FOREGROUND_SERVICE_MICROPHONE` (Android) for background/locked-screen capture. Needs device verification of the always-on foreground service.
-- 📱 Lecture upload ≥90 min: real chunked/resumable upload (`src/services/recordingUpload.ts` → `/api/uploads/init|chunk|complete`) with per-chunk retry+backoff; server refuses incomplete assembly (409) and `/complete` is idempotent. Long-run + interruption recovery to be confirmed on device.
-- 📱 Device calendar: `src/services/calendar.ts` creates a dedicated calendar, writes events (with weekly recurrence), verifies each write, and reports external ids to the server for dedupe/recovery (`/api/calendar/*`). Needs device verification.
-- 📱 Local notifications: `src/services/notifications.ts` schedules reminders + daily/weekly routines, Done/Snooze actions, and rebuilds the schedule from the server on launch (reboot restoration). Needs device verification.
-- 📱 Data export via Android share sheet: `expo-sharing` writes the `/api/export` archive to a file and opens the share sheet. Needs device verification.
-- ✅ Reliability backend for all of the above (state machine, ledger, reminders, idempotency, AI cap, chunked upload, calendar mapping) is verified here with automated tests (`backend/tests/test_phase2_reliability.py`).
-- 🔴 Live AI (capture/import/notes/transcribe/search quality) is BLOCKED: the supplied OpenAI key has no billing (429 insufficient_quota). Preview runs `AI_PROVIDER=fixture` (deterministic). Flip to `openai` + funded key and run the live-AI checklist in PHASE2_STATUS.md.
+## Email verification & password reset — production blocker
+- Fully implemented and tested against a **mock mailer** (24… see auth report). Live email
+  **delivery** is **BLOCKED** until real SMTP credentials are supplied and a real-inbox test
+  passes. In production, if SMTP is not configured the app **fails safely** (HTTP 503) and
+  never silently uses the mock mailer. `dev-login` and `dev-outbox` return 404 in production.
 
-## Not implemented (by design / out of scope)
-- ⛔ LMS API integration (explicitly excluded).
-- ⛔ Grade calculator, flashcards, quizzes, tutor, Pomodoro, wellness — intentionally excluded to preserve focus.
+## Calendar (Phase 3B) — device-only items NOT validated on web
+The backend contract, reconciliation, dedup, isolation and Today logic are verified
+(24/24). The following require an installed APK/IPA build with real accounts and were
+**not** marked as passed:
+- Reading/writing the OS calendar via `expo-calendar` (device-only).
+- Real **Google** and **Microsoft 365 / Outlook / Exchange** calendars synced to Android.
+- Actual OS permission dialogs, `Linking.openSettings()` deep-link, and permission-revoked
+  transitions on a device.
+- Real network-retry behavior on the device.
 
-## Recommended before Play release
-Wire the native modules (foreground-service recording, expo-calendar, expo-notifications, share intents) in a development build and execute the device test matrix in ANDROID_RELEASE_GUIDE.md; publish Privacy Policy & Terms pages.
+### Provider visibility caveat
+If a provider's calendar is **not** exposed through the Android device calendar provider
+(some Exchange/EAS or restricted enterprise accounts), Student Assistant cannot see it.
+Recommended least-friction persistent connection in that case: add the account through the
+device's native **Settings → Accounts** so it syncs into the OS calendar provider (then it
+appears in "Choose a calendar"). **Do not** rely on repeated ICS imports as the normal
+workflow — ICS may be used only as a **one-time** fallback, never for ongoing sync.
+
+## Native features requiring a build (from earlier phases)
+- Background/locked-screen lecture recording (`expo-audio`), local notification delivery &
+  actions, device calendar writes, share-sheet export, document/photo pickers — implemented
+  in code; require an installed build to verify.
+
+## Other
+- Rate limiting is in-memory (per process). A multi-instance deployment should move it to a
+  shared store (e.g. Redis).
+- Compromised-password check uses a bundled common-password list (no live HIBP lookup).
+- Onboarding first-run flag (`sa_onboarded`) is device-global, not per-user.
+- Semantic search falls back to keyword mode unless `QDRANT_URL` is configured.
