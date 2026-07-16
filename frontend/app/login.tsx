@@ -7,17 +7,9 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import { Feather } from "@expo/vector-icons";
-import * as WebBrowser from "expo-web-browser";
-import * as Google from "expo-auth-session/providers/google";
 import { C, S, R, F, HERO } from "@/src/theme";
 import { useAuth } from "@/src/auth";
-
-WebBrowser.maybeCompleteAuthSession();
-
-const WEB_ID = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
-const ANDROID_ID = process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID;
-const IOS_ID = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID;
-const GOOGLE_ENABLED = !!(WEB_ID || ANDROID_ID || IOS_ID);
+import { GOOGLE_ENABLED, signInWithGoogle } from "@/src/services/googleSignin";
 
 function scorePassword(pw: string): { score: number; label: string; color: string } {
   if (!pw) return { score: 0, label: "", color: C.border };
@@ -40,22 +32,28 @@ function scorePassword(pw: string): { score: number; label: string; color: strin
 
 function GoogleButton({ onError, onBusy }: { onError: (m: string) => void; onBusy: (b: boolean) => void }) {
   const { signInWithGoogleToken } = useAuth();
-  const [request, response, promptAsync] = Google.useIdTokenAuthRequest({
-    webClientId: WEB_ID, androidClientId: ANDROID_ID, iosClientId: IOS_ID,
-  });
-  useEffect(() => {
-    if (response?.type === "success" && response.params?.id_token) {
-      onBusy(true);
-      signInWithGoogleToken(response.params.id_token)
-        .catch((e) => onError(String(e.message || e)))
-        .finally(() => onBusy(false));
+  const [busy, setBusy] = useState(false);
+  const onPress = async () => {
+    onError("");
+    setBusy(true); onBusy(true);
+    try {
+      const { idToken } = await signInWithGoogle();
+      await signInWithGoogleToken(idToken);
+    } catch (e: any) {
+      onError(String(e?.message || e));
+    } finally {
+      setBusy(false); onBusy(false);
     }
-  }, [response]);
+  };
   return (
-    <Pressable testID="google-signin" disabled={!request} onPress={() => { onError(""); promptAsync(); }}
-      style={({ pressed }) => [styles.google, !request && { opacity: 0.6 }, pressed && { opacity: 0.85 }]}>
-      <Feather name="log-in" size={18} color={C.onSurface} />
-      <Text style={styles.googleTxt}>Continue with Google</Text>
+    <Pressable testID="google-signin" disabled={busy} onPress={onPress}
+      style={({ pressed }) => [styles.google, busy && { opacity: 0.6 }, pressed && { opacity: 0.85 }]}>
+      {busy ? <ActivityIndicator color={C.onSurface} /> : (
+        <>
+          <Feather name="log-in" size={18} color={C.onSurface} />
+          <Text style={styles.googleTxt}>Continue with Google</Text>
+        </>
+      )}
     </Pressable>
   );
 }

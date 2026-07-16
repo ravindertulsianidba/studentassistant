@@ -10,6 +10,7 @@ import { C, S, R, F } from "@/src/theme";
 import { api } from "@/src/api";
 import { Card, SectionTitle, Btn, Badge } from "@/src/components/ui";
 import { health as notifHealth, sendTestNotification } from "@/src/services/notifications";
+import { GOOGLE_WEB_CLIENT_ID, nativeModuleAvailable, signInWithGoogle } from "@/src/services/googleSignin";
 
 const isDevice = Platform.OS === "ios" || Platform.OS === "android";
 const TZ = (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone; } catch { return "UTC"; } })();
@@ -59,6 +60,26 @@ export default function Diagnostics() {
   const testAI = () => run("ai", async () => { const r = await api.post("/diagnostics/test-ai", {}); return r.ok ? `✓ AI OK (${r.latency_ms}ms, ${r.provider})` : "✕ " + (r.error || "AI unavailable"); });
   const testCalRead = () => run("calread", async () => { const r = await api.post("/diagnostics/test-calendar-read", {}); return r.connected ? `✓ ${r.external_events_mirrored} event(s) mirrored. ${r.note}` : "✕ No calendar connected"; });
   const retry = () => run("retry", async () => { const r = await api.post("/diagnostics/retry-jobs", {}); return `✓ Requeued ${r.uploads_requeued} upload(s), ${r.reminders_requeued} reminder(s)`; });
+  const testGoogle = () => run("google", async () => {
+    // Sanitized Google Sign-In self-check. NEVER logs the ID token contents.
+    const mod = nativeModuleAvailable();
+    const webCfg = !!GOOGLE_WEB_CLIENT_ID;
+    const lines = [
+      `${mod ? "✓" : "✕"} Native Google module ${mod ? "available" : "unavailable (needs installed build)"}`,
+      `${webCfg ? "✓" : "✕"} Web client ID ${webCfg ? "configured" : "missing"}`,
+    ];
+    if (!mod || !webCfg) return lines.join("\n");
+    try {
+      const { idToken } = await signInWithGoogle();
+      lines.push(`✓ ID token received (len ${idToken.length})`);
+      const r = await api.post("/auth/google", { id_token: idToken });
+      lines.push(`${r?.access_token ? "✓" : "✕"} Backend audience accepted (verified vs Web client ID)`);
+      lines.push(`${r?.access_token ? "✓" : "✕"} Application session created`);
+    } catch (e: any) {
+      lines.push(`✕ ${String(e?.message || e)}`);
+    }
+    return lines.join("\n");
+  });
   const testMic = () => run("mic", async () => {
     if (!isDevice) return "✕ Microphone works in the installed app, not the web preview.";
     const cur = await AudioModule.getRecordingPermissionsAsync();
@@ -159,6 +180,7 @@ export default function Diagnostics() {
               <Btn label="Test calendar read" variant="soft" icon="calendar" onPress={testCalRead} testID="diag-test-calread" />
               <Btn label="Create & delete test event" variant="soft" icon="plus-square" onPress={testEvent} testID="diag-test-event" />
               <Btn label="Test microphone" variant="soft" icon="mic" onPress={testMic} testID="diag-test-mic" />
+              <Btn label="Test Google Sign-In" variant="soft" icon="log-in" onPress={testGoogle} testID="diag-test-google" />
               <Btn label="Retry failed jobs" variant="soft" icon="rotate-cw" onPress={retry} testID="diag-retry" />
               <Btn label="Export diagnostic report" variant="soft" icon="download" onPress={exportReport} testID="diag-export" />
               <Btn label="Copy Support Bundle" variant="soft" icon="clipboard" onPress={openSupportBundle} testID="diag-support-bundle" />

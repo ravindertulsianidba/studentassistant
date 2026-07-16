@@ -15,7 +15,8 @@
       "distribution": "internal",
       "channel": "preview",
       "env": {
-        "EXPO_PUBLIC_BACKEND_URL": "https://studentassistant-api.decisivlabs.com"
+        "EXPO_PUBLIC_BACKEND_URL": "https://studentassistant-api.decisivlabs.com",
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "130940560692-ld17qvuahirmicb5o74qktuvvaa2cgnr.apps.googleusercontent.com"
       },
       "android": {
         "buildType": "apk"
@@ -25,7 +26,8 @@
       "channel": "production",
       "autoIncrement": true,
       "env": {
-        "EXPO_PUBLIC_BACKEND_URL": "https://studentassistant-api.decisivlabs.com"
+        "EXPO_PUBLIC_BACKEND_URL": "https://studentassistant-api.decisivlabs.com",
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "130940560692-ld17qvuahirmicb5o74qktuvvaa2cgnr.apps.googleusercontent.com"
       },
       "android": {
         "buildType": "app-bundle"
@@ -35,7 +37,8 @@
       "channel": "production",
       "autoIncrement": true,
       "env": {
-        "EXPO_PUBLIC_BACKEND_URL": "https://studentassistant-api.decisivlabs.com"
+        "EXPO_PUBLIC_BACKEND_URL": "https://studentassistant-api.decisivlabs.com",
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "130940560692-ld17qvuahirmicb5o74qktuvvaa2cgnr.apps.googleusercontent.com"
       },
       "android": {
         "buildType": "apk"

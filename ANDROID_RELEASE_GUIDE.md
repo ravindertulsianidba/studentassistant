@@ -60,10 +60,22 @@ For Google Sign-In, register the keystore **SHA-1** on the Android OAuth client.
 > required — Options A and B produce the same app, which talks only to your
 > backend and your API keys.
 
-## Google Sign-In prerequisites
-- Google Cloud Console → Credentials → OAuth client IDs (Web + Android).
-- Android client needs the package name + signing **SHA-1**.
-- Add the `studentassistant` scheme redirect for `expo-auth-session`.
+## Google Sign-In prerequisites (native — `react-native-nitro-google-signin`)
+- Library: **`react-native-nitro-google-signin`** (native Android Credential Manager).
+  Config plugin `react-native-nitro-google-signin` is wired in `app.json`.
+- The app reads **only** the **Web** client ID (`EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID`,
+  pinned in `eas.json` profile env). It is passed to `GoogleOneTapSignIn.configure({ webClientId })`
+  and is the audience the backend verifies (`GOOGLE_CLIENT_ID` on the server must equal it).
+- Google Cloud Console → Credentials → OAuth client IDs: create a **Web** client and an
+  **Android** client. The Android client needs the app **package name**
+  (`com.decisivlabs.studentassistant`) + release keystore **SHA-1**. The Android client ID
+  is **not** read by the app — Google resolves it via package + SHA-1.
+- **No `google-services.json` and no Firebase are required** (we use an explicit `webClientId`,
+  not `autoDetect`). No client secret is used in the mobile app.
+- Google Sign-In runs **only in an installed dev/preview/production build** — never in Expo Go
+  or the web preview. Requires a prebuild + native rebuild (`expo prebuild` → EAS build).
+- iOS (future): add an iOS OAuth client and pass `iosUrlScheme` (reversed iOS client ID) to the
+  config plugin; not needed for Android-only releases.
 
 ## Device test matrix (see PHASE2_STATUS.md for the live tracking table)
 Install · Upgrade · Google sign-in · **Foreground/locked-screen recording** ·

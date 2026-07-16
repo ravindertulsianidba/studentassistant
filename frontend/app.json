@@ -78,7 +78,13 @@
       ],
       "expo-web-browser",
       "@react-native-community/datetimepicker",
-      "expo-background-task"
+      "expo-background-task",
+      [
+        "react-native-nitro-google-signin",
+        {
+          "iosUrlScheme": "com.googleusercontent.apps.130940560692-ld17qvuahirmicb5o74qktuvvaa2cgnr"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

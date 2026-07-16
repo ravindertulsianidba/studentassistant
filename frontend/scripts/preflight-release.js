@@ -47,14 +47,12 @@ if (!url) fail.push("EXPO_PUBLIC_BACKEND_URL is not set.");
 else if (!/^https:\/\//.test(url)) fail.push(`EXPO_PUBLIC_BACKEND_URL must be https (got ${url}).`);
 else ok.push("EXPO_PUBLIC_BACKEND_URL is set (https)");
 
-// 3) Google OAuth config present when Google is enabled (any client id => all considered).
-const g = ["EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID", "EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID", "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID"].map(E);
-if (g.some(Boolean)) {
-  if (!g.every(Boolean)) warn.push("Some Google client IDs are set but not all (web/android/ios). Google button shows only where configured.");
-  else ok.push("Google OAuth client IDs present");
-} else {
-  ok.push("Google Sign-In not configured (button hidden) — acceptable");
-}
+// 3) Google OAuth: native react-native-nitro-google-signin reads only the Web client ID.
+const gWeb = E("EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID");
+if (gWeb) ok.push("Google Web client ID present (native Google Sign-In enabled)");
+else warn.push("EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID not set locally — released builds inject it via eas.json profile env.");
+if (E("EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID") || E("EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID"))
+  warn.push("Legacy EXPO_PUBLIC_GOOGLE_ANDROID/IOS_CLIENT_ID set but unused — the app reads only the Web client ID.");
 
 // 4) No hardcoded secrets bundled in frontend source.
 const SECRET_RE = [
@@ -119,12 +117,24 @@ const perms = android.permissions || [];
 });
 ok.push(`Android permissions declared: ${perms.length}`);
 
-// 7) eas.json build profiles present.
+// 7) eas.json build profiles present + release identity pinned in profile env.
 const eas = JSON.parse(fs.readFileSync(path.join(ROOT, "eas.json"), "utf8"));
 ["preview", "production", "production-apk"].forEach((p) => {
-  if (!eas.build?.[p]) warn.push(`eas.json build profile "${p}" missing.`);
+  const prof = eas.build?.[p];
+  if (!prof) { warn.push(`eas.json build profile "${p}" missing.`); return; }
+  const penv = prof.env || {};
+  if (!/^https:\/\/.+/.test(penv.EXPO_PUBLIC_BACKEND_URL || ""))
+    fail.push(`eas.json profile "${p}" must pin a production https EXPO_PUBLIC_BACKEND_URL.`);
+  if (!penv.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID)
+    warn.push(`eas.json profile "${p}" does not pin EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID (Google button hidden in that build).`);
 });
-ok.push("eas.json build profiles checked");
+ok.push("eas.json build profiles + pinned release env checked");
+
+// 7b) Native Google Sign-In config plugin present.
+const plugins = (expo.plugins || []).map((pl) => (Array.isArray(pl) ? pl[0] : pl));
+if (plugins.includes("react-native-nitro-google-signin"))
+  ok.push("react-native-nitro-google-signin config plugin present");
+else warn.push("react-native-nitro-google-signin config plugin not found in app.json plugins.");
 
 // 8) .env.example exists.
 if (!fs.existsSync(path.join(ROOT, ".env.example"))) fail.push(".env.example is missing.");
