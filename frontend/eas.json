@@ -14,6 +14,9 @@
     "preview": {
       "distribution": "internal",
       "channel": "preview",
+      "env": {
+        "EXPO_PUBLIC_BACKEND_URL": "https://studentassistant-api.decisivlabs.com"
+      },
       "android": {
         "buildType": "apk"
       }
@@ -21,6 +24,9 @@
     "production": {
       "channel": "production",
       "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_BACKEND_URL": "https://studentassistant-api.decisivlabs.com"
+      },
       "android": {
         "buildType": "app-bundle"
       }
@@ -28,6 +34,9 @@
     "production-apk": {
       "channel": "production",
       "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_BACKEND_URL": "https://studentassistant-api.decisivlabs.com"
+      },
       "android": {
         "buildType": "apk"
       }

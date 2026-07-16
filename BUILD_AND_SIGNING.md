@@ -3,8 +3,10 @@
 _Student Assistant · usable outside the Emergent Publish button_
 
 App identifiers (from `frontend/app.json`):
-- Android package: `com.ravindertulsiani.studentassistant`
-- iOS bundle: `com.ravindertulsiani.studentassistant`
+- Android package: `com.decisivlabs.studentassistant`
+- iOS bundle: `com.decisivlabs.studentassistant`
+- App scheme: `studentassistant` (OAuth redirect + deep links)
+- Production backend URL: `https://studentassistant-api.decisivlabs.com`
 - Version: `1.0.0`
 
 ## Build profiles (`frontend/eas.json`)
@@ -67,6 +69,11 @@ Configure signing in `android/app/build.gradle` (`signingConfigs.release`) with 
 keystore for local release builds.
 
 ## Runtime configuration for a build
-- Set `EXPO_PUBLIC_BACKEND_URL` (and Google client IDs `EXPO_PUBLIC_GOOGLE_*`, plus
-  `EXPO_PUBLIC_EAS_PROJECT_ID` if used) in the build environment / `frontend/.env` before
-  building. The app calls the backend at `EXPO_PUBLIC_BACKEND_URL` + `/api`.
+- `EXPO_PUBLIC_BACKEND_URL` is pinned to the production API
+  `https://studentassistant-api.decisivlabs.com` via the `env` block of the
+  `preview` / `production` / `production-apk` profiles in `frontend/eas.json`, so
+  release builds always target production regardless of the local `.env`.
+- Set the Google client IDs (`EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID`,
+  `EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID`, optional `EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID`)
+  and `EXPO_PUBLIC_EAS_PROJECT_ID` in the build environment / EAS secrets before building.
+  The app calls the backend at `EXPO_PUBLIC_BACKEND_URL` + `/api`.

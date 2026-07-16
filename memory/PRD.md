@@ -92,7 +92,7 @@
 - **Product**: risk-based AI Inbox routing (exams/recurring/ambiguous/deadline-change/possible-dup → always Inbox), relationship detection + deadline audit history, source-grounded chunked search with citations, evening/weekly reviews, source documents, transcription endpoint, prefs.
 - **Frontend**: login screen + AuthContext (secure token storage, refresh, sign out, delete account); all API calls authenticated.
 - **Deployment package**: Dockerfile, docker-compose.production.yml, Nginx+TLS, deploy/update/backup/restore scripts, `.env.example`, + 10 audit/guide docs.
-- **Android metadata**: name "Student Assistant", package `com.ravindertulsiani.studentassistant`, scheme, mic/notification/calendar/foreground permissions.
+- **Android metadata**: name "Student Assistant", package `com.decisivlabs.studentassistant`, scheme `studentassistant`, mic/notification/calendar/foreground permissions.
 
 ### Pending (credentials / device build)
 - 🔑 Live AI + real Google: need `OPENAI_API_KEY` + `GOOGLE_CLIENT_ID`.

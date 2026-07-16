@@ -6,9 +6,11 @@ choose either; both are independent of the Emergent editor.
 
 ## App identity (already set in `frontend/app.json`)
 - Visible name: **Student Assistant**
-- Android package: `com.ravindertulsiani.studentassistant`
-- iOS bundle id: `com.ravindertulsiani.studentassistant`
+- Android package: `com.decisivlabs.studentassistant`
+- iOS bundle id: `com.decisivlabs.studentassistant`
 - Scheme: `studentassistant` (OAuth redirect + share intents)
+- Production backend URL: `https://studentassistant-api.decisivlabs.com`
+  (pinned in `eas.json` profile `env`)
 - Bump `version` + `android.versionCode` on each release.
 
 ## Permissions declared (`app.json`)
@@ -34,7 +36,7 @@ npm i -g eas-cli
 eas login                       # your own (free) Expo account
 eas init                        # writes extra.eas.projectId into app.json
 # set build-time public env (or use EAS secrets):
-#   EXPO_PUBLIC_BACKEND_URL=https://api.ravindertulsiani.com
+#   EXPO_PUBLIC_BACKEND_URL=https://studentassistant-api.decisivlabs.com  (pinned in eas.json)
 #   EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID / EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID
 eas build -p android --profile preview       # -> installable APK
 eas build -p android --profile production     # -> AAB for Play Console

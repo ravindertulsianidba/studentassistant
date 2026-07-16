@@ -91,10 +91,24 @@ if (/testID="dev-(signin|email)"|dev-only|Quick sign-in|activates in the install
   fail.push("Normal login screen still contains development UI/wording.");
 else ok.push("Normal login screen contains no development UI/wording");
 
-// 6) app.json: android permissions + foreground services + version fields.
+// 6) app.json: locked production identity + android permissions + version fields.
 const appJson = JSON.parse(fs.readFileSync(path.join(ROOT, "app.json"), "utf8"));
 const expo = appJson.expo || {};
 const android = expo.android || {};
+
+// Locked production identity — must never drift.
+const LOCKED_PACKAGE = "com.decisivlabs.studentassistant";
+const LOCKED_SCHEME = "studentassistant";
+if (android.package !== LOCKED_PACKAGE)
+  fail.push(`app.json expo.android.package must be "${LOCKED_PACKAGE}" (got "${android.package}").`);
+else ok.push(`Android package = ${LOCKED_PACKAGE}`);
+if ((expo.ios || {}).bundleIdentifier !== LOCKED_PACKAGE)
+  fail.push(`app.json expo.ios.bundleIdentifier must be "${LOCKED_PACKAGE}" (got "${(expo.ios || {}).bundleIdentifier}").`);
+else ok.push(`iOS bundleIdentifier = ${LOCKED_PACKAGE}`);
+if (expo.scheme !== LOCKED_SCHEME)
+  fail.push(`app.json expo.scheme must be "${LOCKED_SCHEME}" (got "${expo.scheme}").`);
+else ok.push(`App scheme = ${LOCKED_SCHEME}`);
+
 if (!expo.version) fail.push("app.json expo.version (versionName) is missing.");
 else ok.push(`versionName = ${expo.version}`);
 if (android.versionCode === undefined) warn.push("app.json expo.android.versionCode not set (EAS can auto-increment).");

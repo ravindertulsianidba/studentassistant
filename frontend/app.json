@@ -11,7 +11,7 @@
     "ios": {
       "supportsTablet": true,
       "buildNumber": "1",
-      "bundleIdentifier": "com.ravindertulsiani.studentassistant",
+      "bundleIdentifier": "com.decisivlabs.studentassistant",
       "infoPlist": {
         "NSCameraUsageDescription": "Scan your schedule and syllabus to capture deadlines",
         "NSPhotoLibraryUsageDescription": "Import screenshots of schedules and emails",
@@ -30,7 +30,7 @@
       },
       "edgeToEdgeEnabled": true,
       "versionCode": 1,
-      "package": "com.ravindertulsiani.studentassistant",
+      "package": "com.decisivlabs.studentassistant",
       "permissions": [
         "CAMERA",
         "RECORD_AUDIO",
