@@ -1,5 +1,24 @@
 # Student Assistant — PRD
 
+## Implemented v6 (2026-07-16) — Phase 3C: Reliability, Active Listening, Diagnostics
+- **Active Listening** (`routers/listen.py`, `app/listen.tsx`): explicit start, single active
+  session, listening/paused states, elapsed timer + audio meter, pause/resume/stop, device
+  audio→transcript→extraction→AI Inbox, session summary + undo, ledger updates. Web text
+  fallback. Backend 20/20 tests (iteration_11).
+- **Diagnostics** (`routers/diagnostics.py`, `app/diagnostics.tsx`): full system-health
+  aggregation + safe actions (test notification/backend/AI/calendar-read/test-event/mic,
+  retry jobs, export report) + device-state reporting.
+- **True background sync** (`src/services/background.ts`): expo-background-task runs
+  calendar+reminder sync while app closed and after reboot (DEVICE-ONLY). Foreground
+  re-sync on AppState active. Corrected earlier "app-open = background" misstatement.
+- Entry points added within the 5-tab nav (NO Calendar tab): Active Listening + Record from
+  Capture; Diagnostics + Connect Calendar in Settings.
+- **Build**: `eas.json` has preview(APK)/production(AAB)/production-apk(APK); docs
+  BUILD_AND_SIGNING.md + PHASE3B_APK_PACKAGE.md. Reports: PHASE3C_IMPLEMENTATION_REPORT.md.
+- **Not production-ready**: live SMTP delivery; physical device-calendar sync; on-device
+  audio/background recording/background sync (all await native-build/credentials).
+
+
 ## Implemented v5 (2026-07-15) — Phase 3A: Secure Auth + Onboarding
 - **Secure email/password auth** (retains Google Sign-In): register, required email
   verification, login, forgot/reset password, resend, refresh rotation, logout,
