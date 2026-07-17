@@ -95,6 +95,12 @@
       "eas": {
         "projectId": "e65acdac-aafc-4757-8399-cc406ae598a9"
       }
+    },
+    "updates": {
+      "url": "https://u.expo.dev/e65acdac-aafc-4757-8399-cc406ae598a9"
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
     }
   }
 }
