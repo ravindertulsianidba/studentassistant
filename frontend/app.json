@@ -29,7 +29,7 @@
         "backgroundColor": "#2E3F32"
       },
       "edgeToEdgeEnabled": true,
-      "versionCode": 1,
+      "versionCode": 2,
       "package": "com.decisivlabs.studentassistant",
       "permissions": [
         "CAMERA",
