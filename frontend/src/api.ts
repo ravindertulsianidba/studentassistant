@@ -42,11 +42,17 @@ async function req(path: string, opts: RequestInit = {}, retry = true): Promise<
     if (res.status === 402 && detail && typeof detail === "object") {
       onLimitReached?.(detail);
       const err: any = new Error(detail.message || "You've reached this allowance.");
-      err.status = 402; err.payload = detail;
+      err.status = 402; err.payload = detail; err.kind = "limit";
       throw err;
     }
     const err: any = new Error(typeof detail === "string" ? detail : `Request failed (${res.status})`);
     err.status = res.status; err.payload = detail;
+    // Sanitized AI failures (503 from the backend AIError handler) are never paywalls.
+    if ((e as any).ai_error) {
+      err.aiError = true;
+      err.category = (e as any).error_category || "ai_unavailable";
+      err.kind = "ai";
+    }
     throw err;
   }
   return res.json();

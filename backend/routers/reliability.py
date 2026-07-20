@@ -64,6 +64,35 @@ async def patch_reminder(rid: str, body: Dict[str, Any], uid: str = CurrentUser)
         raise HTTPException(status_code=404, detail="Reminder not found")
     return await db.reminders.find_one({"id": rid, "user_id": uid}, {"_id": 0})
 
+async def _evening_review_eligible(uid: str) -> bool:
+    """True only when there is something worth reviewing today: a task due today
+    or overdue, an event today, a completed item today, or a pending AI Inbox item.
+    Empty accounts return False so no Evening Review is scheduled."""
+    today = datetime.now(timezone.utc).date()
+
+    def _is_today_or_past(iso):
+        d = _parse_dt(iso)
+        return bool(d and d.date() <= today)
+
+    def _is_today(iso):
+        d = _parse_dt(iso)
+        return bool(d and d.date() == today)
+
+    tasks = await db.tasks.find({"user_id": uid}, {"_id": 0, "due": 1, "status": 1, "updated_at": 1}).to_list(1000)
+    for t in tasks:
+        if t.get("status") == "open" and _is_today_or_past(t.get("due")):
+            return True
+        if t.get("status") == "done" and _is_today(t.get("updated_at")):
+            return True
+    events = await db.events.find({"user_id": uid}, {"_id": 0, "start": 1}).to_list(1000)
+    for e in events:
+        if _is_today(e.get("start")):
+            return True
+    if await db.review.count_documents({"user_id": uid, "status": "pending"}):
+        return True
+    return False
+
+
 @router.get("/reminders/sync")
 async def reminders_sync(uid: str = CurrentUser):
     """The device calls this on launch/foreground (and after reboot) to (re)build
@@ -72,7 +101,10 @@ async def reminders_sync(uid: str = CurrentUser):
         {"user_id": uid, "status": {"$in": ["pending", "scheduled", "snoozed"]}},
         {"_id": 0}).sort("remind_at", 1).to_list(1000)
     prefs = await get_prefs(uid)
-    return {"reminders": pending, "routines": rel.routine_specs(prefs),
+    eligible = await _evening_review_eligible(uid)
+    return {"reminders": pending,
+            "routines": rel.routine_specs(prefs, evening_review_eligible=eligible),
+            "evening_review_eligible": eligible,
             "quiet_hours": {"start": prefs.get("quiet_start"), "end": prefs.get("quiet_end")},
             "server_time": now_iso()}
 

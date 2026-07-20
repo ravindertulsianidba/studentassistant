@@ -74,48 +74,98 @@ async function scheduleOne(r: { id: string; title: string; body?: string; remind
 }
 
 /**
- * Rebuilds the entire local schedule from the server. Called on launch and
- * foreground — this is what restores reminders after a reboot (Android clears
- * scheduled notifications on reboot).
+ * Cancel ONLY the notifications this app manages (reminders + repeating routines),
+ * identified by their content.data. This is used instead of
+ * cancelAllScheduledNotificationsAsync so we never wipe unrelated/user notifications.
+ * Returns the number cancelled.
+ */
+async function cancelManaged(opts: { reminders?: boolean; routines?: boolean } = { reminders: true, routines: true }) {
+  if (!isDevice) return 0;
+  const all = await Notifications.getAllScheduledNotificationsAsync();
+  let n = 0;
+  for (const req of all) {
+    const data: any = req.content?.data || {};
+    const isReminder = !!data.reminderId;
+    const isRoutine = !!data.routine;
+    if ((isReminder && opts.reminders) || (isRoutine && opts.routines)) {
+      try { await Notifications.cancelScheduledNotificationAsync(req.identifier); n++; } catch {}
+    }
+  }
+  return n;
+}
+
+// Single scheduling authority + concurrency guard: overlapping launch/login/
+// foreground/refresh calls await the SAME run instead of racing (which produced
+// duplicate routine notifications).
+let _syncInFlight: Promise<{ scheduled: number; routines: number }> | null = null;
+
+/**
+ * Rebuilds the local schedule from the server. Idempotent: it cancels only the
+ * notifications it manages (by semantic identity in content.data) and reschedules
+ * exactly one per reminder/routine. Safe to call repeatedly.
  */
 export async function syncAndSchedule(): Promise<{ scheduled: number; routines: number }> {
   if (!isDevice) return { scheduled: 0, routines: 0 };
-  const perm = await ensurePermission();
-  if (!perm.granted) return { scheduled: 0, routines: 0 };
-  await setupAndroid();
-  await Notifications.cancelAllScheduledNotificationsAsync();
+  if (_syncInFlight) return _syncInFlight;
+  _syncInFlight = (async () => {
+    const perm = await ensurePermission();
+    if (!perm.granted) return { scheduled: 0, routines: 0 };
+    await setupAndroid();
 
-  const sync = await api.get("/reminders/sync");
-  let scheduled = 0;
-  for (const r of sync.reminders || []) {
-    const notifId = await scheduleOne(r);
-    if (notifId) {
-      scheduled++;
-      try { await api.post(`/reminders/${r.id}/status`, { status: "scheduled", external_id: notifId }); } catch {}
+    const sync = await api.get("/reminders/sync");
+
+    // Replace managed reminders (dedupe by reminderId).
+    await cancelManaged({ reminders: true, routines: false });
+    let scheduled = 0;
+    for (const r of sync.reminders || []) {
+      const notifId = await scheduleOne(r);
+      if (notifId) {
+        scheduled++;
+        try { await api.post(`/reminders/${r.id}/status`, { status: "scheduled", external_id: notifId }); } catch {}
+      }
     }
-  }
-  // Repeating routines (daily briefing / evening / weekly review).
-  let routines = 0;
-  for (const rt of sync.routines || []) {
-    const [h, m] = String(rt.time || "09:00").split(":").map((n: string) => parseInt(n, 10));
-    if (rt.repeat === "daily") {
-      await Notifications.scheduleNotificationAsync({
-        content: { title: rt.title, body: rt.body, data: { routine: rt.key } },
-        trigger: { type: Notifications.SchedulableTriggerInputTypes.DAILY, hour: h || 9, minute: m || 0 },
-      });
-      routines++;
-    } else if (rt.repeat === "weekly") {
-      await Notifications.scheduleNotificationAsync({
-        content: { title: rt.title, body: rt.body, data: { routine: rt.key } },
-        trigger: {
-          type: Notifications.SchedulableTriggerInputTypes.WEEKLY,
-          weekday: WEEKDAY[rt.weekday] || 1, hour: h || 18, minute: m || 0,
-        },
-      });
-      routines++;
+
+    // Replace managed routines (dedupe by routine key). The server omits
+    // evening_review when there is nothing to review, so empty accounts get none.
+    await cancelManaged({ reminders: false, routines: true });
+    const seen = new Set<string>();
+    let routines = 0;
+    for (const rt of sync.routines || []) {
+      if (seen.has(rt.key)) continue;      // never schedule the same routine twice
+      seen.add(rt.key);
+      const [h, m] = String(rt.time || "09:00").split(":").map((n: string) => parseInt(n, 10));
+      if (rt.repeat === "daily") {
+        await Notifications.scheduleNotificationAsync({
+          content: { title: rt.title, body: rt.body, data: { routine: rt.key } },
+          trigger: { type: Notifications.SchedulableTriggerInputTypes.DAILY, hour: h || 9, minute: m || 0 },
+        });
+        routines++;
+      } else if (rt.repeat === "weekly") {
+        await Notifications.scheduleNotificationAsync({
+          content: { title: rt.title, body: rt.body, data: { routine: rt.key } },
+          trigger: {
+            type: Notifications.SchedulableTriggerInputTypes.WEEKLY,
+            weekday: WEEKDAY[rt.weekday] || 1, hour: h || 18, minute: m || 0,
+          },
+        });
+        routines++;
+      }
     }
+    return { scheduled, routines };
+  })();
+  try {
+    return await _syncInFlight;
+  } finally {
+    _syncInFlight = null;
   }
-  return { scheduled, routines };
+}
+
+/**
+ * On logout, cancel this app's routine + reminder notifications so the previous
+ * account never receives notifications intended for it on this device.
+ */
+export async function cancelAllRoutinesAndReminders(): Promise<number> {
+  return cancelManaged({ reminders: true, routines: true });
 }
 
 export async function health() {

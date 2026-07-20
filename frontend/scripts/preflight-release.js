@@ -103,7 +103,7 @@ else ok.push(`Android package = ${LOCKED_PACKAGE}`);
 if ((expo.ios || {}).bundleIdentifier !== LOCKED_PACKAGE)
   fail.push(`app.json expo.ios.bundleIdentifier must be "${LOCKED_PACKAGE}" (got "${(expo.ios || {}).bundleIdentifier}").`);
 else ok.push(`iOS bundleIdentifier = ${LOCKED_PACKAGE}`);
-if expo.scheme !== LOCKED_SCHEME)
+if (expo.scheme !== LOCKED_SCHEME)
   fail.push(`app.json expo.scheme must be "${LOCKED_SCHEME}" (got "${expo.scheme}").`);
 else ok.push(`App scheme = ${LOCKED_SCHEME}`);
 // Locked slug + EAS project id.

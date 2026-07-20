@@ -13,7 +13,7 @@ const PRIVACY_URL = "https://decisivlabs.com/student-assistant/privacy";
 const TERMS_URL = "https://decisivlabs.com/student-assistant/terms";
 
 const PREMIUM_POINTS = [
-  { icon: "mic", t: "300 shared audio minutes / month for lectures + active listening" },
+  { icon: "mic", t: "240 audio minutes / 30-day cycle for lectures + active listening" },
   { icon: "file-text", t: "25 AI imports (syllabi, screenshots, schedules) per month" },
   { icon: "search", t: "100 AI Memory questions across your courses" },
   { icon: "sunrise", t: "Personalized Daily Briefings & Weekly Reviews" },
@@ -123,7 +123,10 @@ export default function Paywall() {
           testID="plan-monthly" />
 
         {!billing.BILLING_ENABLED && (
-          <Text style={styles.soon}>Subscriptions launch soon. Your Free plan and one-time Starter Pack keep working now.</Text>
+          <Text style={styles.soon} testID="paywall-testbuild-notice">
+            Premium purchasing is not available in this test build. Your Free plan and one-time
+            Starter Pack keep working now.
+          </Text>
         )}
         {!!msg && <Text style={styles.err}>{msg}</Text>}
 

@@ -11,7 +11,7 @@ import config
 import ai_service
 import auth
 import security
-from mailer import mailer
+from mailer import mailer, send_tracked
 import reliability as rel
 import vectorstore as vs
 from db import db
@@ -32,7 +32,7 @@ router = APIRouter(prefix="/api")
 
 
 GENERIC_LOGIN_ERROR = "Invalid email or password."
-GENERIC_ACTION_OK = "If an account exists for that email, we've sent instructions."
+GENERIC_ACTION_OK = "If an account exists for this address, the email has been queued."
 
 
 def _norm_email(e: str) -> str:
@@ -98,8 +98,8 @@ async def _peek_token(raw: str, purpose: str):
 async def _send_verification(email: str, name: str | None):
     raw = await _make_email_token(email, "verify_email", config.VERIFICATION_TOKEN_HOURS)
     link = f"{config.APP_WEB_URL}/verify-email?token={raw}"
-    await mailer.send(
-        email, "Verify your email — Student Assistant",
+    await send_tracked(
+        "verification", email, "Verify your email — Student Assistant",
         f"Welcome to Student Assistant!\n\nPlease verify your email address to activate your "
         f"account. This link expires in {config.VERIFICATION_TOKEN_HOURS} hours:\n\n{link}\n\n"
         f"If you didn't create an account, you can ignore this email.",
@@ -228,8 +228,8 @@ async def forgot_password(body: ForgotPasswordIn, request: Request):
         if not await _recent_token(email, "reset_password", config.RESEND_COOLDOWN_SECONDS):
             raw = await _make_email_token(email, "reset_password", config.RESET_TOKEN_HOURS)
             link = f"{config.APP_WEB_URL}/reset-password?token={raw}"
-            await mailer.send(
-                email, "Reset your password — Student Assistant",
+            await send_tracked(
+                "reset", email, "Reset your password — Student Assistant",
                 f"We received a request to reset your password. This link expires in "
                 f"{config.RESET_TOKEN_HOURS} hour(s):\n\n{link}\n\n"
                 f"If you didn't request this, you can safely ignore this email.",

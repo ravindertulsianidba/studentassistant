@@ -38,9 +38,14 @@ async def capture(inp: CaptureIn, request: Request, uid: str = CurrentUser,
         return cached
     await enforce_ai(uid)
     nowt = datetime.now(timezone.utc)
-    data = await ai_service.extract_json(
-        CAPTURE_SYS,
-        f'Current date/time: {nowt.isoformat()} ({nowt.strftime("%A")}).\nStudent said: "{inp.text}"')
+    try:
+        data = await ai_service.extract_json(
+            CAPTURE_SYS,
+            f'Current date/time: {nowt.isoformat()} ({nowt.strftime("%A")}).\nStudent said: "{inp.text}"')
+    except Exception:
+        # Technical failure before a result — never permanently consume AI quota.
+        await rel.refund_ai_cap(db, uid)
+        raise
     items = data.get("items", []) if isinstance(data, dict) else []
     committed, review = await route_items(uid, items, "voice capture", inp.text, idem=idempotency_key)
     await add_chunks(uid, "capture", str(uuid.uuid4()), f'Capture "{inp.text[:40]}"', None, inp.text)
@@ -73,7 +78,7 @@ async def import_doc(inp: ImportIn, request: Request, uid: str = CurrentUser):
     try:
         data = await ai_service.extract_json(IMPORT_SYS, user_msg, image_b64=inp.image_base64)
     except Exception:
-        await mon.refund(h_imp); await mon.refund(h_pg)
+        await mon.refund(h_imp); await mon.refund(h_pg); await rel.refund_ai_cap(db, uid)
         raise
     await mon.record_usage(h_imp, op="import", model=config.OPENAI_MODEL_VISION, pages=1)
     await mon.record_usage(h_pg, op="import_pages", model=config.OPENAI_MODEL_VISION, pages=1)
@@ -174,7 +179,8 @@ async def import_file(request: Request, uid: str = CurrentUser, file: UploadFile
             await mon.refund(h_imp)
         if h_pg:
             await mon.refund(h_pg)
-        ai_error = str(e)
+        await rel.refund_ai_cap(db, uid)
+        ai_error = e.category
     await db.imports.insert_one({"id": str(uuid.uuid4()), "user_id": uid, "kind": "file",
         "source_id": src_id, "count": len(review), "created_at": now_iso()})
     await add_timeline(uid, "import", f"Imported file: {file.filename}",
@@ -206,6 +212,7 @@ async def transcribe_audio(request: Request, uid: str = CurrentUser, file: Uploa
         text = await ai_service.transcribe(raw, filename=file.filename or "audio.m4a")
     except Exception:
         await mon.refund(handle)
+        await rel.refund_ai_cap(db, uid)
         raise
     await mon.record_usage(handle, op="transcribe", model=config.OPENAI_MODEL_TRANSCRIBE,
                            audio_minutes=minutes, file_size=len(raw), settle_amount=minutes)
@@ -224,7 +231,11 @@ Return ONLY strict JSON with only sections supported by the content: {"overview"
 async def generate_notes(inp: NotesIn, request: Request, uid: str = CurrentUser):
     rate_limit(request, "ai", 30)
     await enforce_ai(uid)
-    data = await ai_service.extract_json(NOTES_SYS, f"Course: {inp.course or 'General'}\nTitle: {inp.title}\nTranscript:\n{inp.transcript[:20000]}")
+    try:
+        data = await ai_service.extract_json(NOTES_SYS, f"Course: {inp.course or 'General'}\nTitle: {inp.title}\nTranscript:\n{inp.transcript[:20000]}")
+    except Exception:
+        await rel.refund_ai_cap(db, uid)
+        raise
     note = {"id": str(uuid.uuid4()), "user_id": uid, "title": inp.title, "course": inp.course,
             "transcript": inp.transcript, "study_notes": data, "created_at": now_iso()}
     await db.notes.insert_one(dict(note))
@@ -288,6 +299,7 @@ async def search(inp: SearchIn, request: Request, uid: str = CurrentUser):
         answer = await ai_service.complete_text(sys, f"Question: {inp.query}\n\nSources:\n{context}")
     except Exception:
         await mon.refund(handle)
+        await rel.refund_ai_cap(db, uid)
         raise
     await mon.record_usage(handle, op="memory_question", model=config.OPENAI_MODEL_JSON)
     citations = [{"label": c["source_label"], "snippet": c["text"][:160]} for c in top]
