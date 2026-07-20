@@ -65,7 +65,8 @@ async def _run():
 
     async def fake_ack(purchase_token, sub):
         # Assert the entitlement was persisted BEFORE acknowledgement (ack only after grant).
-        ent = await db.entitlements.find_one({"user_id": uidA, "purchase_token": purchase_token})
+        import token_crypto
+        ent = await db.entitlements.find_one({"user_id": uidA, "purchase_token_hash": token_crypto.token_hash(purchase_token)})
         ack_calls.append({"token": purchase_token, "ent_exists": bool(ent),
                           "plan": (ent or {}).get("plan")})
         return "acknowledged"
@@ -198,11 +199,78 @@ async def _run_failclosed():
     print("PASS — billing fail-closed: 503 without credentials, 502 sanitized on provider error")
 
 
+async def _run_encryption():
+    """Purchase tokens are encrypted at rest; hash used for ownership; missing key fails closed."""
+    import token_crypto
+    uid = f"enctest-{uuid.uuid4().hex[:8]}"
+    tok = f"tok-{uuid.uuid4().hex}"
+    saved_ack = bmod._maybe_acknowledge
+
+    async def fake_ack(purchase_token, sub):
+        return "already_acknowledged"
+    bmod._maybe_acknowledge = fake_ack
+    try:
+        await bmod._apply_entitlement(uid, tok, _sub("SUBSCRIPTION_STATE_ACTIVE"), "verify")
+
+        ent = await db.entitlements.find_one({"user_id": uid})
+        pt = await db.purchase_tokens.find_one({"purchase_token_hash": token_crypto.token_hash(tok)})
+        # DB records must NOT contain the raw token in any plaintext field.
+        assert "purchase_token" not in ent, "entitlements must not store raw token"
+        assert "purchase_token" not in pt, "purchase_tokens must not store raw token"
+        assert ent.get("encrypted_purchase_token"), "entitlements must store encrypted token"
+        assert pt.get("encrypted_purchase_token"), "purchase_tokens must store encrypted token"
+        # Encrypted token differs from plaintext; decryption restores it.
+        assert ent["encrypted_purchase_token"] != tok, "ciphertext must differ from plaintext"
+        assert token_crypto.decrypt_token(ent["encrypted_purchase_token"]) == tok, "decrypt restores token"
+        # Ownership/replay checks use the hash.
+        assert ent["purchase_token_hash"] == token_crypto.token_hash(tok)
+        assert pt["purchase_token_hash"] == token_crypto.token_hash(tok)
+
+        # RTDN ownership lookup (by hash) + reconcile (decrypts) still work.
+        recon_tokens = []
+
+        async def fake_verify(t):
+            recon_tokens.append(t)
+            return _sub("SUBSCRIPTION_STATE_ACTIVE")
+        saved_verify = bmod._play_verify_token
+        bmod._play_verify_token = fake_verify
+        try:
+            r = await bmod.reconcile_once()
+            assert r.get("reconciled", 0) >= 1, r
+            assert tok in recon_tokens, "reconcile must decrypt and re-query the real token"
+        finally:
+            bmod._play_verify_token = saved_verify
+
+        # Missing encryption key fails closed (503), never stores plaintext / grants.
+        uid2 = f"enctest-{uuid.uuid4().hex[:8]}"
+        tok2 = f"tok-{uuid.uuid4().hex}"
+        saved_key = os.environ.get("GOOGLE_PLAY_TOKEN_ENCRYPTION_KEY", "")
+        os.environ["GOOGLE_PLAY_TOKEN_ENCRYPTION_KEY"] = ""
+        try:
+            failed_closed = False
+            try:
+                await bmod._apply_entitlement(uid2, tok2, _sub("SUBSCRIPTION_STATE_ACTIVE"), "verify")
+            except HTTPException as e:
+                failed_closed = e.status_code == 503
+            assert failed_closed, "missing encryption key must fail closed (503)"
+            assert await db.entitlements.count_documents({"user_id": uid2}) == 0, "no record without encryption"
+        finally:
+            os.environ["GOOGLE_PLAY_TOKEN_ENCRYPTION_KEY"] = saved_key
+        await _cleanup([uid2], [tok2])
+
+        print("PASS — token encryption: no plaintext at rest, ciphertext!=plaintext, decrypt restores, "
+              "hash-based ownership, reconcile decrypts, missing key fails closed")
+    finally:
+        bmod._maybe_acknowledge = saved_ack
+        await _cleanup([uid], [tok])
+
+
 def test_billing_verify():
     loop = asyncio.new_event_loop()
     try:
         loop.run_until_complete(_run())
         loop.run_until_complete(_run_failclosed())
+        loop.run_until_complete(_run_encryption())
     finally:
         loop.close()
 

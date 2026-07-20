@@ -43,6 +43,12 @@ def check() -> dict:
         missing_credentials.append(
             "GOOGLE_PLAY_SERVICE_ACCOUNT_JSON (Android Publisher service-account key path)")
 
+    if config.GOOGLE_PLAY_TOKEN_ENCRYPTION_KEY:
+        code_ready.append("purchase-token encryption key present")
+    else:
+        missing_credentials.append(
+            "GOOGLE_PLAY_TOKEN_ENCRYPTION_KEY (server secret to encrypt purchase tokens at rest)")
+
     if config.PUBSUB_SERVICE_ACCOUNT_EMAIL or config.PUBSUB_VERIFICATION_TOKEN:
         code_ready.append("RTDN push authentication configured")
     else:

@@ -115,6 +115,8 @@ GOOGLE_PLAY_MONTHLY_BASE_PLAN_ID = os.environ.get("GOOGLE_PLAY_MONTHLY_BASE_PLAN
 GOOGLE_PLAY_ANNUAL_BASE_PLAN_ID = os.environ.get("GOOGLE_PLAY_ANNUAL_BASE_PLAN_ID", "annual")
 # Path to the Google service-account JSON (never commit the file itself).
 GOOGLE_PLAY_SERVICE_ACCOUNT_JSON = os.environ.get("GOOGLE_PLAY_SERVICE_ACCOUNT_JSON", "")
+# Server-side secret for authenticated encryption of purchase tokens at rest (never in frontend).
+GOOGLE_PLAY_TOKEN_ENCRYPTION_KEY = os.environ.get("GOOGLE_PLAY_TOKEN_ENCRYPTION_KEY", "")
 # Pub/Sub OIDC audience / service account email used to authenticate RTDN pushes.
 PUBSUB_VERIFICATION_TOKEN = os.environ.get("PUBSUB_VERIFICATION_TOKEN", "")
 PUBSUB_SERVICE_ACCOUNT_EMAIL = os.environ.get("PUBSUB_SERVICE_ACCOUNT_EMAIL", "")

@@ -102,15 +102,15 @@ export default function Premium() {
     setBusy(true);
     billing.logEvent("purchase_start", selected);
     try {
-      await billing.purchase(cfg.product_id, basePlan, billing.obfuscatedAccountId(user?.id));
+      const r: any = await billing.purchase(cfg.product_id, basePlan, billing.obfuscatedAccountId(user?.id));
+      if (r?.pending) { setMsg("Your purchase is pending. We'll unlock Premium once it clears."); await refresh(false); return; }
       billing.logEvent("purchase_complete", selected);
       await refresh(false);
       setMsg("");
     } catch (e: any) {
-      const m = String(e?.message || "");
       // User cancellation is not an error.
-      if (/cancel/i.test(m)) { setMsg(""); }
-      else { billing.logEvent("purchase_fail", selected, m.slice(0, 50)); setMsg(consumerError(m)); }
+      if (e?.code === "cancelled") { setMsg(""); }
+      else { billing.logEvent("purchase_fail", selected, String(e?.code || "error")); setMsg(consumerError(String(e?.message || ""))); }
     } finally { setBusy(false); }
   };
 

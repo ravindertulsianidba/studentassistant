@@ -111,7 +111,12 @@ async def startup():
         # Monetization / entitlement / cost indexes.
         await db.entitlements.create_index("user_id", unique=True)
         await db.usage_cycles.create_index([("user_id", 1), ("cycle_type", 1), ("cycle_start", 1)])
-        await db.purchase_tokens.create_index("purchase_token", unique=True)
+        # Migrate off the legacy plaintext-token index (tokens are now stored encrypted + hashed).
+        try:
+            await db.purchase_tokens.drop_index("purchase_token_1")
+        except Exception:
+            pass
+        await db.purchase_tokens.create_index("purchase_token_hash", unique=True)
         await db.rtdn_events.create_index("message_id", unique=True)
         await db.cost_ledger.create_index([("user_id", 1), ("ts", -1)])
         await db.cost_ledger.create_index("ts")

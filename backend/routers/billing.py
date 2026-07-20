@@ -5,7 +5,6 @@ config), and verify/restore/rtdn return a clear 503 WITHOUT ever granting entitl
 No client-supplied flag can grant Premium — only a Google-verified purchase token does.
 """
 import base64
-import hashlib
 import json
 import logging
 import uuid
@@ -16,6 +15,7 @@ from fastapi import APIRouter, HTTPException, Request, Header
 
 import config
 import monetization as mon
+import token_crypto
 from db import db
 from core import CurrentUser, rate_limit
 from pydantic import BaseModel
@@ -34,11 +34,20 @@ def _iso(dt):
 
 def _token_hash(token: str) -> str:
     """Non-reversible fingerprint of a purchase token for logging / dedupe (never log the token)."""
-    return hashlib.sha256((token or "").encode("utf-8")).hexdigest()
+    return token_crypto.token_hash(token)
 
 
 def _short_hash(token: str) -> str:
     return _token_hash(token)[:12]
+
+
+def _decrypt_stored_token(doc: dict) -> Optional[str]:
+    """Recover a purchase token for a stored record: decrypt the ciphertext. Legacy plaintext
+    (should not exist in production) is tolerated read-only. Never logs the token."""
+    enc = doc.get("encrypted_purchase_token")
+    if enc:
+        return token_crypto.decrypt_token(enc)
+    return doc.get("purchase_token")  # read-only migration fallback; we never WRITE plaintext
 
 
 class VerifyIn(BaseModel):
@@ -150,8 +159,18 @@ async def _apply_entitlement(uid: str, purchase_token: str, sub: dict, source: s
     line = _validate_product(sub)
     state, expiry, anchor = _map_play_state(sub)
 
+    thash = _token_hash(purchase_token)
+    # Encrypt the token for storage BEFORE any write. Fail closed if the encryption key is
+    # missing/invalid so we never persist a plaintext token or grant Premium without it.
+    try:
+        enc_token = token_crypto.encrypt_token(purchase_token)
+    except token_crypto.TokenCryptoError:
+        logger.error("Billing token encryption unavailable (token=%s); failing closed.", _short_hash(purchase_token))
+        raise HTTPException(status_code=503, detail="Subscriptions are temporarily unavailable.")
+
     # Reject a purchase token already bound to a different account (no reassignment / replay).
-    owner = await db.purchase_tokens.find_one({"purchase_token": purchase_token})
+    # Ownership is checked by the non-reversible hash, never the raw token.
+    owner = await db.purchase_tokens.find_one({"purchase_token_hash": thash})
     if owner and owner.get("user_id") not in (None, uid):
         raise HTTPException(status_code=409, detail="This purchase is linked to a different account.")
 
@@ -160,16 +179,18 @@ async def _apply_entitlement(uid: str, purchase_token: str, sub: dict, source: s
     ack_state = sub.get("acknowledgementState", "")
     now_iso = _iso(_utcnow())
     linked_token = sub.get("linkedPurchaseToken")
+    linked_hash = _token_hash(linked_token) if linked_token else None
 
     await db.purchase_tokens.update_one(
-        {"purchase_token": purchase_token},
+        {"purchase_token_hash": thash},
         {"$set": {"user_id": uid, "product_id": line["product_id"] or config.GOOGLE_PLAY_SUBSCRIPTION_PRODUCT_ID,
                   "base_plan_id": line["base_plan_id"], "state": state,
-                  "purchase_token_hash": _token_hash(purchase_token),
+                  "encrypted_purchase_token": enc_token,
                   "acknowledgement_state": ack_state, "auto_renewing": auto_renewing,
-                  "linked_purchase_token": linked_token,
+                  "linked_purchase_token_hash": linked_hash,
                   "updated_at": now_iso, "last_verified_at": now_iso, "source": source},
-         "$setOnInsert": {"created_at": now_iso}}, upsert=True)
+         "$setOnInsert": {"created_at": now_iso},
+         "$unset": {"purchase_token": ""}}, upsert=True)
 
     prev = await db.entitlements.find_one({"user_id": uid}) or {}
     ent = {
@@ -180,9 +201,9 @@ async def _apply_entitlement(uid: str, purchase_token: str, sub: dict, source: s
         "base_plan": line["base_plan_id"],
         "plan": "premium" if is_premium else "free",
         "state": state,
-        "purchase_token": purchase_token,
-        "purchase_token_hash": _token_hash(purchase_token),
-        "linked_purchase_token": linked_token,
+        "encrypted_purchase_token": enc_token,
+        "purchase_token_hash": thash,
+        "linked_purchase_token_hash": linked_hash,
         "acknowledgement_state": ack_state,
         "auto_renewing": auto_renewing,
         "current_period_end": expiry,
@@ -192,9 +213,9 @@ async def _apply_entitlement(uid: str, purchase_token: str, sub: dict, source: s
         "last_event": source,
         "updated_at": now_iso,
     }
-    await db.entitlements.update_one({"user_id": uid}, {"$set": ent}, upsert=True)
+    await db.entitlements.update_one({"user_id": uid}, {"$set": ent, "$unset": {"purchase_token": ""}}, upsert=True)
     await db.purchase_events.insert_one({
-        "id": str(uuid.uuid4()), "user_id": uid, "purchase_token_hash": _token_hash(purchase_token),
+        "id": str(uuid.uuid4()), "user_id": uid, "purchase_token_hash": thash,
         "state": state, "source": source, "ts": now_iso})
 
     # Acknowledge ONLY after a granting entitlement has been persisted (idempotent, best-effort).
@@ -204,12 +225,22 @@ async def _apply_entitlement(uid: str, purchase_token: str, sub: dict, source: s
             await db.entitlements.update_one(
                 {"user_id": uid}, {"$set": {"acknowledgement_state": "ACKNOWLEDGEMENT_STATE_ACKNOWLEDGED"}})
             await db.purchase_tokens.update_one(
-                {"purchase_token": purchase_token},
+                {"purchase_token_hash": thash},
                 {"$set": {"acknowledgement_state": "ACKNOWLEDGEMENT_STATE_ACKNOWLEDGED"}})
     return ent
 
 
 # ----------------------------------------------------------------- endpoints
+def _require_billing_ready():
+    """Fail closed unless billing is enabled AND the token encryption key is available, so we
+    never verify/store a purchase without being able to protect the token at rest."""
+    if not config.BILLING_ENABLED:
+        raise HTTPException(status_code=503, detail="Subscriptions are not yet available.")
+    if not token_crypto.encryption_ready():
+        logger.error("Billing enabled but token encryption key missing; failing closed.")
+        raise HTTPException(status_code=503, detail="Subscriptions are temporarily unavailable.")
+
+
 @router.get("/billing/status")
 async def billing_status(uid: str = CurrentUser):
     """Entitlement + current-cycle usage. Safe when billing is disabled."""
@@ -226,8 +257,7 @@ async def billing_status(uid: str = CurrentUser):
 @router.post("/billing/google/verify")
 async def billing_verify(body: VerifyIn, request: Request, uid: str = CurrentUser):
     rate_limit(request, "billing_verify", limit=20, window=60)
-    if not config.BILLING_ENABLED:
-        raise HTTPException(status_code=503, detail="Subscriptions are not yet available.")
+    _require_billing_ready()
     if not body.purchase_token:
         raise HTTPException(status_code=400, detail="Missing purchase token.")
     sub = await _play_verify_token(body.purchase_token)
@@ -239,8 +269,7 @@ async def billing_verify(body: VerifyIn, request: Request, uid: str = CurrentUse
 @router.post("/billing/google/restore")
 async def billing_restore(body: VerifyIn, request: Request, uid: str = CurrentUser):
     rate_limit(request, "billing_restore", limit=20, window=60)
-    if not config.BILLING_ENABLED:
-        raise HTTPException(status_code=503, detail="Subscriptions are not yet available.")
+    _require_billing_ready()
     if not body.purchase_token:
         raise HTTPException(status_code=400, detail="Missing purchase token.")
     sub = await _play_verify_token(body.purchase_token)
@@ -257,7 +286,10 @@ async def billing_refresh(request: Request, uid: str = CurrentUser):
         # Status still works (returns Free/plan config); no local grant ever.
         return await billing_status(uid)
     ent_doc = await db.entitlements.find_one({"user_id": uid}) or {}
-    token = ent_doc.get("purchase_token")
+    try:
+        token = _decrypt_stored_token(ent_doc)
+    except token_crypto.TokenCryptoError:
+        token = None  # fail closed: cannot decrypt -> keep last known state, never guess
     if token:
         try:
             sub = await _play_verify_token(token)
@@ -305,7 +337,8 @@ async def billing_rtdn(request: Request, authorization: str = Header(default="")
     voided_notice = data.get("voidedPurchaseNotification") or {}
     purchase_token = sub_notice.get("purchaseToken") or voided_notice.get("purchaseToken")
     if purchase_token:
-        owner = await db.purchase_tokens.find_one({"purchase_token": purchase_token})
+        # Ownership lookup uses the token HASH, never the raw token.
+        owner = await db.purchase_tokens.find_one({"purchase_token_hash": _token_hash(purchase_token)})
         uid = (owner or {}).get("user_id")
         # A voided/refunded/charged-back purchase revokes entitlement immediately.
         if voided_notice and uid:
@@ -326,14 +359,15 @@ async def billing_rtdn(request: Request, authorization: str = Header(default="")
 
 
 async def _revoke_entitlement(uid: str, purchase_token: str, source: str):
-    """Remove Premium entitlement for a voided/revoked purchase. Idempotent."""
+    """Remove Premium entitlement for a voided/revoked purchase. Idempotent. Matches by hash."""
     now_iso = _iso(_utcnow())
+    thash = _token_hash(purchase_token)
     await db.entitlements.update_one(
-        {"user_id": uid, "purchase_token": purchase_token},
+        {"user_id": uid, "purchase_token_hash": thash},
         {"$set": {"plan": "free", "state": "revoked", "auto_renewing": False,
                   "last_event": source, "last_verified_at": now_iso, "updated_at": now_iso}})
     await db.purchase_tokens.update_one(
-        {"purchase_token": purchase_token},
+        {"purchase_token_hash": thash},
         {"$set": {"state": "revoked", "updated_at": now_iso, "source": source}})
 
 
@@ -384,19 +418,21 @@ async def reconcile_once(max_batch: int = 200) -> dict:
     try:
         cursor = db.entitlements.find(
             {"state": {"$in": list(mon.PREMIUM_ACTIVE_STATES) + ["account_hold", "pending"]},
-             "purchase_token": {"$exists": True, "$ne": None}}).sort("last_verified_at", 1).limit(max_batch)
+             "encrypted_purchase_token": {"$exists": True, "$ne": None}}).sort("last_verified_at", 1).limit(max_batch)
         async for ent in cursor:
             uid = ent.get("user_id")
-            token = ent.get("purchase_token")
-            if not uid or not token:
-                continue
             checked += 1
             try:
+                # Decrypt ONLY here, immediately before calling Google Play. Never logged.
+                token = _decrypt_stored_token(ent)
+                if not uid or not token:
+                    continue
                 sub = await _play_verify_token(token)
                 await _apply_entitlement(uid, token, sub, source="reconcile")
                 reconciled += 1
             except Exception as e:
-                logger.warning("Reconcile skipped (token=%s): %s", _short_hash(token), type(e).__name__)
+                logger.warning("Reconcile skipped (hash=%s): %s",
+                               (ent.get("purchase_token_hash") or "")[:12], type(e).__name__)
     except Exception as e:
         logger.warning("Reconcile pass error: %s", type(e).__name__)
     return {"checked": checked, "reconciled": reconciled, "ran_at": _iso(_utcnow())}

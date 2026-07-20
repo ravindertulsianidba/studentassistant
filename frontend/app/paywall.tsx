@@ -5,6 +5,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { Feather } from "@expo/vector-icons";
 import { C, S, R, F } from "@/src/theme";
 import * as billing from "@/src/services/billing";
+import { useAuth } from "@/src/auth";
 
 const HEADLINE = "Stay ahead of deadlines without doing all the organizing yourself.";
 const VALUE = "Record lectures, capture commitments, organize academic information and receive personalized guidance with higher monthly AI allowances.";
@@ -30,6 +31,7 @@ function planLabel(period?: string) {
 export default function Paywall() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const { user } = useAuth();
   const params = useLocalSearchParams<{ feature?: string; reason?: string }>();
   const [loading, setLoading] = useState(true);
   const [cfg, setCfg] = useState<any>(null);
@@ -64,12 +66,14 @@ export default function Paywall() {
     setBusy(true);
     billing.logEvent("purchase_start", selected);
     try {
-      await billing.purchase(cfg.product_id, basePlan, status?.plan ? "acct" : "acct");
+      const r: any = await billing.purchase(cfg.product_id, basePlan, billing.obfuscatedAccountId(user?.id));
+      if (r?.pending) { setMsg("Your purchase is pending. We'll unlock Premium once it clears."); return; }
       billing.logEvent("purchase_complete", selected);
       router.back();
     } catch (e: any) {
-      billing.logEvent("purchase_fail", selected, String(e?.message || "").slice(0, 50));
-      setMsg(String(e?.message || "Purchase could not be completed."));
+      if (e?.code === "cancelled") { setMsg(""); return; } // cancellation is not an error
+      billing.logEvent("purchase_fail", selected, String(e?.code || "error"));
+      setMsg("We couldn't complete that just now. Please try again in a moment.");
     } finally { setBusy(false); }
   };
 

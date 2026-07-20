@@ -7,6 +7,13 @@
  */
 import { Platform } from "react-native";
 import { api } from "@/src/api";
+import {
+  BillingError, PlayProduct, PurchaseCoordinator,
+  normalizeSubscriptions, obfuscatedAccountId as _obfId, selectOffer,
+} from "@/src/services/billingCore";
+
+export { BillingError };
+export type { PlayProduct };
 
 export const BILLING_ENABLED =
   (process.env.EXPO_PUBLIC_BILLING_ENABLED || "false").toLowerCase() === "true";
@@ -44,25 +51,10 @@ export async function refreshEntitlement(): Promise<BillingStatus> {
 
 /**
  * Stable, non-reversible obfuscated account identifier tied to the authenticated user.
- * Google Play associates this with the purchase for fraud prevention. It is opaque (a hash),
- * so the raw user id is never sent to the store.
+ * Centralized in billingCore so Premium and Paywall use identical logic.
  */
 export function obfuscatedAccountId(userId?: string | null): string {
-  const s = String(userId || "anon");
-  let h1 = 0x811c9dc5;
-  for (let i = 0; i < s.length; i++) {
-    h1 ^= s.charCodeAt(i);
-    h1 = Math.imul(h1, 0x01000193);
-  }
-  // 8-hex FNV-1a, doubled with a salt pass for a longer opaque token.
-  let h2 = 0x811c9dc5;
-  const salt = s + "|sa";
-  for (let i = 0; i < salt.length; i++) {
-    h2 ^= salt.charCodeAt(i);
-    h2 = Math.imul(h2, 0x01000193);
-  }
-  const hex = (n: number) => (n >>> 0).toString(16).padStart(8, "0");
-  return `sa_${hex(h1)}${hex(h2)}`;
+  return _obfId(userId);
 }
 
 function nativeAvailable(): boolean {
@@ -77,72 +69,114 @@ function nativeAvailable(): boolean {
 }
 export const canPurchase = nativeAvailable;
 
-export type PlayProduct = {
-  basePlanId: string; productId: string; title?: string;
-  localizedPrice?: string; currency?: string; billingPeriod?: string;
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const loadIap = () => require("expo-iap");
+
+const getToken = (p: any): string | undefined => p?.purchaseToken || p?.purchaseTokenAndroid || undefined;
+const isPending = (p: any): boolean => String(p?.purchaseState ?? "").toLowerCase() === "pending";
+// expo-iap 4.5.1 ErrorCode.UserCancelled === "user-cancelled".
+const isUserCancelled = (e: any): boolean => {
+  const c = String(e?.code ?? "").toLowerCase();
+  return c === "user-cancelled" || c === "e_user_cancelled" || c.includes("cancel");
 };
 
-/** Load localized subscription offers from Google Play (device only). */
+let _coordinator: PurchaseCoordinator | null = null;
+let _listenersReady = false;
+let _subs: Array<{ remove: () => void }> = [];
+
+/** Initialize the purchase coordinator + event listeners exactly once. */
+function ensureCoordinator(iap: any): PurchaseCoordinator {
+  if (!_coordinator) {
+    _coordinator = new PurchaseCoordinator({
+      launchPurchase: async ({ productId, offerToken, obfuscatedAccountId }) => {
+        // requestPurchase only LAUNCHES the flow; the result arrives via the listeners.
+        await iap.requestPurchase({
+          request: {
+            google: {
+              skus: [productId],
+              subscriptionOffers: [{ sku: productId, offerToken }],
+              obfuscatedAccountId,
+            },
+          },
+          type: "subs",
+        });
+      },
+      verify: async ({ purchaseToken }) => api.post("/billing/google/verify", { purchase_token: purchaseToken }),
+      finish: async (purchase: any) => {
+        if (iap.finishTransaction) await iap.finishTransaction({ purchase, isConsumable: false });
+      },
+      getToken, isPending, isUserCancelled,
+    });
+  }
+  if (!_listenersReady) {
+    const onUpdate = iap.purchaseUpdatedListener?.((purchase: any) => { void _coordinator!.handleUpdate(purchase); });
+    const onError = iap.purchaseErrorListener?.((error: any) => { _coordinator!.handleError(error); });
+    if (onUpdate) _subs.push(onUpdate);
+    if (onError) _subs.push(onError);
+    _listenersReady = true;
+  }
+  return _coordinator;
+}
+
+/** Tear down listeners (e.g., on sign-out). Safe to call repeatedly. */
+export function removeBillingListeners() {
+  for (const s of _subs) { try { s.remove(); } catch { /* noop */ } }
+  _subs = [];
+  _listenersReady = false;
+}
+
+/** Load localized subscription offers from Google Play (device only), preserving offer tokens. */
 export async function loadProducts(productId: string): Promise<PlayProduct[]> {
   if (!nativeAvailable()) return [];
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const iap = require("expo-iap");
+  const iap = loadIap();
   try {
     if (iap.initConnection) await iap.initConnection();
-    const subs = (await (iap.getSubscriptions?.({ skus: [productId] }) ??
-                        iap.fetchProducts?.({ skus: [productId], type: "subs" }) ?? [])) as any[];
-    const out: PlayProduct[] = [];
-    for (const s of subs) {
-      const offers = s.subscriptionOfferDetails || s.subscriptionOfferDetailsAndroid || [];
-      for (const o of offers) {
-        const phase = (o.pricingPhases?.pricingPhaseList || [])[0] || {};
-        out.push({
-          basePlanId: o.basePlanId || o.basePlanIdAndroid || "",
-          productId: s.productId || productId,
-          title: s.title, localizedPrice: phase.formattedPrice,
-          currency: phase.priceCurrencyCode, billingPeriod: phase.billingPeriod,
-        });
-      }
-    }
-    return out;
+    const subs = (await (iap.fetchProducts?.({ skus: [productId], type: "subs" }) ??
+                        iap.getSubscriptions?.({ skus: [productId] }) ?? [])) as any[];
+    return normalizeSubscriptions(subs, productId);
   } catch {
     return [];
   }
 }
 
 /**
- * Start a subscription purchase for a base plan, then send the resulting purchase token to
- * the backend for Google-side verification. Returns the backend-verified status.
+ * Start a subscription purchase for a base plan using the REAL Google Play offer token, driven
+ * by the event listeners. Resolves ONLY after the backend verifies and entitlement is granted
+ * (and the local transaction is finished). PENDING purchases resolve as pending (no grant).
  */
 export async function purchase(productId: string, basePlanId: string, obfuscatedAccountId: string) {
-  if (!nativeAvailable()) throw new Error("Subscriptions aren't available in this build yet.");
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const iap = require("expo-iap");
-  const result = await (iap.requestSubscription?.({
-    sku: productId, subscriptionOffers: [{ sku: productId, offerToken: basePlanId }],
-    obfuscatedAccountIdAndroid: obfuscatedAccountId,
-  }) ?? iap.requestPurchase?.({ request: { android: { skus: [productId] } }, type: "subs" }));
-  const p: any = Array.isArray(result) ? result[0] : result;
-  const purchaseToken = p?.purchaseToken || p?.purchaseTokenAndroid;
-  if (!purchaseToken) throw new Error("Purchase did not complete.");
-  const verified = await api.post("/billing/google/verify", {
-    purchase_token: purchaseToken, product_id: productId, base_plan_id: basePlanId,
-    obfuscated_account_id: obfuscatedAccountId,
-  });
-  try { if (iap.finishTransaction) await iap.finishTransaction({ purchase: p, isConsumable: false }); } catch { /* noop */ }
-  return verified;
+  if (!nativeAvailable()) throw new BillingError("unavailable", "Subscriptions aren't available in this build yet.");
+  const iap = loadIap();
+  if (iap.initConnection) await iap.initConnection();
+  const products = await loadProducts(productId);
+  const offer = selectOffer(products, basePlanId); // throws if no real offer token -> no launch
+  const coordinator = ensureCoordinator(iap);
+  const outcome = await coordinator.startPurchase({ productId, offerToken: offer.offerToken, obfuscatedAccountId });
+  if (outcome.status === "pending") {
+    return { pending: true, ...(await fetchStatus()) };
+  }
+  return outcome.result ?? (await fetchStatus());
 }
 
-/** Restore previous purchases and re-verify with the backend. */
+/** Restore previous purchases and re-verify server-side BEFORE finishing any transaction. */
 export async function restore() {
-  if (!nativeAvailable()) throw new Error("Subscriptions aren't available in this build yet.");
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const iap = require("expo-iap");
-  const purchases = (await (iap.getAvailablePurchases?.() ?? [])) as any[];
-  let last: any = null;
-  for (const p of purchases) {
-    const token = p?.purchaseToken || p?.purchaseTokenAndroid;
-    if (token) last = await api.post("/billing/google/restore", { purchase_token: token });
-  }
+  if (!nativeAvailable()) throw new BillingError("unavailable", "Subscriptions aren't available in this build yet.");
+  const iap = loadIap();
+  if (iap.initConnection) await iap.initConnection();
+  const coordinator = ensureCoordinator(iap);
+  // Use restore endpoint for reconciliation on restore.
+  const restoreCoordinator = new PurchaseCoordinator({
+    launchPurchase: () => {},
+    verify: async ({ purchaseToken }) => api.post("/billing/google/restore", { purchase_token: purchaseToken }),
+    finish: async (purchase: any) => { if (iap.finishTransaction) await iap.finishTransaction({ purchase, isConsumable: false }); },
+    getToken, isPending, isUserCancelled,
+  });
+  void coordinator; // keep the main coordinator/listeners initialized
+  let purchases: any[] = [];
+  try {
+    if (iap.restorePurchases) await iap.restorePurchases();
+    purchases = (await (iap.getAvailablePurchases?.() ?? [])) as any[];
+  } catch { purchases = []; }
+  const last = await restoreCoordinator.reconcile(purchases);
   return last || (await fetchStatus());
 }
