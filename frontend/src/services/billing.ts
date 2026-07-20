@@ -32,6 +32,39 @@ export async function logEvent(kind: string, plan?: string, reason?: string) {
   try { await api.post("/monetization/event", { kind, plan, reason }); } catch { /* non-blocking */ }
 }
 
+/**
+ * Ask the backend to re-query Google Play for this account's stored purchase and return the
+ * authoritative entitlement. The backend is the entitlement authority; this never grants locally
+ * and fails safe (returns current status) when billing/credentials are unavailable.
+ */
+export async function refreshEntitlement(): Promise<BillingStatus> {
+  try { return await api.post("/billing/google/refresh", {}); }
+  catch { return await fetchStatus(); }
+}
+
+/**
+ * Stable, non-reversible obfuscated account identifier tied to the authenticated user.
+ * Google Play associates this with the purchase for fraud prevention. It is opaque (a hash),
+ * so the raw user id is never sent to the store.
+ */
+export function obfuscatedAccountId(userId?: string | null): string {
+  const s = String(userId || "anon");
+  let h1 = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) {
+    h1 ^= s.charCodeAt(i);
+    h1 = Math.imul(h1, 0x01000193);
+  }
+  // 8-hex FNV-1a, doubled with a salt pass for a longer opaque token.
+  let h2 = 0x811c9dc5;
+  const salt = s + "|sa";
+  for (let i = 0; i < salt.length; i++) {
+    h2 ^= salt.charCodeAt(i);
+    h2 = Math.imul(h2, 0x01000193);
+  }
+  const hex = (n: number) => (n >>> 0).toString(16).padStart(8, "0");
+  return `sa_${hex(h1)}${hex(h2)}`;
+}
+
 function nativeAvailable(): boolean {
   if (Platform.OS === "web" || !BILLING_ENABLED) return false;
   try {

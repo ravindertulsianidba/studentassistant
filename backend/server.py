@@ -117,8 +117,10 @@ async def startup():
         await db.cost_ledger.create_index("ts")
         await db.usage_ledger.create_index([("user_id", 1), ("ts", -1)])
         await db.monetization_events.create_index([("kind", 1), ("ts", -1)])
+        await db.subscription_audit.create_index([("user_id", 1), ("ts", -1)])
         await mon_svc.refresh_pricing()
         retention.start(app)
+        billing.start_reconciliation(app)
         logger.info("Indexes ready. AI_PROVIDER=%s Vector=%s Google=%s Billing=%s",
                     config.AI_PROVIDER, vs.enabled(), bool(config.GOOGLE_CLIENT_ID), config.BILLING_ENABLED)
     except Exception as e:

@@ -1,5 +1,5 @@
 import { useState, useCallback } from "react";
-import { View, Text, StyleSheet, ScrollView, Alert, TextInput, Platform } from "react-native";
+import { View, Text, StyleSheet, ScrollView, Alert, TextInput, Platform, Linking } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
 import { Feather } from "@expo/vector-icons";
@@ -9,6 +9,7 @@ import { C, S, R, F } from "@/src/theme";
 import { api } from "@/src/api";
 import { Card, SectionTitle, Btn, Badge } from "@/src/components/ui";
 import { useAuth } from "@/src/auth";
+import * as billing from "@/src/services/billing";
 import { ensurePermission as notifPerm, syncAndSchedule, health as notifHealth } from "@/src/services/notifications";
 
 export default function Profile() {
@@ -16,8 +17,7 @@ export default function Profile() {
   const { signOut, revokeAllSessions, deleteAccount, replayOnboarding, user } = useAuth();
   const [wr, setWr] = useState<any>(null);
   const [loadingWr, setLoadingWr] = useState(false);
-  const [usage, setUsage] = useState<any>(null);
-  const [capInput, setCapInput] = useState("");
+  const [plan, setPlan] = useState<billing.BillingStatus | null>(null);
   const [notif, setNotif] = useState<any>(null);
   const [busy, setBusy] = useState("");
   const [askDelPw, setAskDelPw] = useState(false);
@@ -27,8 +27,8 @@ export default function Profile() {
   const load = useCallback(async () => {
     setLoadingWr(true);
     try {
-      const [w, u] = await Promise.all([api.get("/weekly-review"), api.get("/ai-usage")]);
-      setWr(w); setUsage(u); setCapInput(String(u.limit));
+      const [w, p] = await Promise.all([api.get("/weekly-review"), billing.fetchStatus()]);
+      setWr(w); setPlan(p);
     } catch (e) {} finally { setLoadingWr(false); }
     try { setNotif(await notifHealth()); } catch {}
   }, []);
@@ -53,17 +53,6 @@ export default function Profile() {
 
   const router = useRouter();
 
-
-  const saveCap = async () => {
-    const n = parseInt(capInput, 10);
-    if (isNaN(n) || n < 0) { Alert.alert("Enter a number", "Use 0 for unlimited."); return; }
-    try {
-      await fetch(`${api.base}/prefs`, { method: "PUT", headers: { "Content-Type": "application/json", ...api.authHeader() } as any, body: JSON.stringify({ daily_ai_limit: n }) });
-      setUsage(await api.get("/ai-usage"));
-      Alert.alert("Saved", n === 0 ? "Daily AI limit removed (unlimited)." : `Daily AI limit set to ${n} requests.`);
-    } catch (e: any) { Alert.alert("Couldn't save", e?.message || "Try again."); }
-  };
-
   const exportData = async () => {
     setBusy("export");
     try {
@@ -82,11 +71,31 @@ export default function Profile() {
   };
 
   const wipe = () => {
-    if ((user as any)?.auth_provider === "password") { setAskDelPw(true); return; }
-    Alert.alert("Delete your account?", "This permanently deletes ALL your data — recordings, transcripts, notes, tasks, events, imports and memory. This cannot be undone.", [
+    const isPremium = plan?.plan === "premium";
+    const subWarning = isPremium
+      ? "\n\nImportant: deleting your Student Assistant account does NOT cancel your Google Play subscription. Cancel it separately in Google Play to stop future charges."
+      : "";
+    if ((user as any)?.auth_provider === "password") {
+      if (isPremium) {
+        Alert.alert("You have an active subscription", subWarning.trim(), [
+          { text: "Manage subscription", onPress: openManageSubscription },
+          { text: "Continue to delete", style: "destructive", onPress: () => setAskDelPw(true) },
+          { text: "Cancel", style: "cancel" },
+        ]);
+      } else { setAskDelPw(true); }
+      return;
+    }
+    Alert.alert("Delete your account?", "This permanently deletes ALL your data — recordings, transcripts, notes, tasks, events, imports and memory. This cannot be undone." + subWarning, [
       { text: "Cancel", style: "cancel" },
+      ...(isPremium ? [{ text: "Manage subscription", onPress: openManageSubscription }] : []),
       { text: "Delete account", style: "destructive", onPress: async () => { await deleteAccount(); } },
     ]);
+  };
+
+  const openManageSubscription = () => {
+    const pkg = plan?.product?.package_name || "com.decisivlabs.studentassistant";
+    const sku = plan?.product?.product_id || "student_assistant_premium";
+    Linking.openURL(`https://play.google.com/store/account/subscriptions?sku=${sku}&package=${pkg}`);
   };
 
   const confirmDeletePw = async () => {
@@ -108,6 +117,31 @@ export default function Profile() {
       <ScrollView contentContainerStyle={{ padding: S.lg, paddingTop: insets.top + S.lg, paddingBottom: 120 }} showsVerticalScrollIndicator={false}>
         <Text style={styles.title}>Settings</Text>
         <Text style={styles.sub}>{user?.email ? `Signed in as ${user.email}` : "Reminders, calendar, privacy & your data"}</Text>
+
+        <View style={{ marginTop: S.xl }}>
+          <Card testID="premium-card" style={{ gap: S.md }}>
+            <View style={styles.premRow}>
+              <View style={styles.premIcon}><Feather name="zap" size={18} color={C.brand} /></View>
+              <View style={{ flex: 1 }}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: S.sm }}>
+                  <Text style={styles.premTitle}>Student Assistant Premium</Text>
+                  <Badge label={plan?.plan === "premium" ? "Premium" : "Free"} tone={plan?.plan === "premium" ? "success" : "info"} />
+                </View>
+                <Text style={styles.premSub}>
+                  {plan?.plan === "premium"
+                    ? "Your plan is active. Manage or review your subscription."
+                    : "Higher monthly AI allowances for lectures, imports and guidance."}
+                </Text>
+              </View>
+            </View>
+            <Btn
+              label={plan?.plan === "premium" ? "Manage Premium" : "Upgrade to Premium"}
+              variant={plan?.plan === "premium" ? "soft" : "primary"}
+              icon={plan?.plan === "premium" ? "settings" : "arrow-up-circle"}
+              onPress={() => router.push("/premium")}
+              testID="premium-open-btn" />
+          </Card>
+        </View>
 
         <View style={{ marginTop: S.xl }}>
           <SectionTitle>Reminders & routines</SectionTitle>
@@ -173,18 +207,6 @@ export default function Profile() {
             </Card>
           ) : null}
         </View>
-
-        <View style={{ marginTop: S.xl }}>
-          <SectionTitle>Advanced · cost protection</SectionTitle>
-          <Card style={{ gap: S.md }}>
-            <Text style={styles.body}>Daily AI request cap. This limits how many AI actions run per day to protect API costs. Use 0 for unlimited.</Text>
-            {usage ? <Text style={styles.meta}>Today: {usage.used} used{usage.unlimited ? "" : ` · ${usage.remaining} left of ${usage.limit}`}</Text> : null}
-            <View style={styles.capRow}>
-              <TextInput style={styles.capInput} value={capInput} onChangeText={setCapInput} keyboardType="number-pad" testID="cap-input" />
-              <Btn label="Save limit" variant="soft" icon="save" onPress={saveCap} testID="cap-save" style={{ flex: 1 }} />
-            </View>
-          </Card>
-        </View>
       </ScrollView>
     </View>
   );
@@ -216,4 +238,8 @@ const styles = StyleSheet.create({
   pText: { fontFamily: F.body, fontSize: 12, color: C.onSurface3, marginTop: 2 },
   capRow: { flexDirection: "row", gap: S.sm, alignItems: "center" },
   capInput: { width: 90, backgroundColor: C.surface, borderRadius: R.md, borderWidth: 1, borderColor: C.borderStrong, padding: S.md, fontFamily: F.bodyBold, fontSize: 16, color: C.onSurface, textAlign: "center" },
+  premRow: { flexDirection: "row", gap: S.md, alignItems: "flex-start" },
+  premIcon: { width: 40, height: 40, borderRadius: R.md, backgroundColor: C.brand3, alignItems: "center", justifyContent: "center" },
+  premTitle: { fontFamily: F.bodyBold, fontSize: 16, color: C.onSurface },
+  premSub: { fontFamily: F.body, fontSize: 13, color: C.onSurface3, marginTop: 2, lineHeight: 18 },
 });

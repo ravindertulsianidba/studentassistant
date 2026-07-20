@@ -285,3 +285,60 @@
 ## agent_communication (Monetization / entitlements / cost control):
 ##     -agent: "main"
 ##     -message: "IMPORTANT: staging is now production-style — ALLOW_INSECURE_DEV=false so /api/auth/dev-login and /api/auth/dev-outbox return 404. Authenticate using the SEEDED verified account email='montest.user@decisivlabs.dev' password='StarterPack#2026!' (POST /api/auth/login). Re-seed if needed: python backend/tests/seed_montest_user.py. Implemented Free/Starter-Pack/Premium entitlements, usage metering + cost ledger, Google Play billing behind BILLING_ENABLED=false, retention cleanup, paywall. BACKEND cases: (1) GET /api/billing/status (auth) -> plan 'free', state 'free', features has audio_minutes/ai_import/import_pages/memory_question/ai_briefing with used/allowance/remaining; product block present. (2) GET /api/usage/status same shape. (3) GET /api/plan/config -> free_starter + premium allowance maps, billing_enabled false. (4) Metering enforcement: with the seeded account, POST /api/search {query:'...'} that returns a grounded AI answer consumes 1 memory_question; after 5 it returns HTTP 402 with structured detail {error:'limit_reached',feature:'memory_question',consumed,allowance,reset_date}. NOTE consuming requires the user to have some captured/imported source content to ground on; if none, /search returns early WITHOUT consuming (that is correct). (5) POST /api/import {text:'CS101 midterm on Dec 5'} consumes 1 ai_import + 1 import_pages; after 2 imports the 3rd -> 402 limit_reached. (6) POST /api/billing/google/verify -> 503 'not yet available' (BILLING_ENABLED false) and NEVER grants premium. (7) POST /api/monetization/event {kind:'paywall_impression'} -> ok; unknown kind -> 400. (8) GET /api/admin/monetization and /api/admin/cost-projection -> 403 for the non-admin seeded user. (9) Regression: /api/tasks, /api/events, /api/briefing, /api/review still 200; manual task creation still works (Free never blocked). (10) Free data never lost: after limits reached, GET existing tasks/notes still 200. FRONTEND (web preview, use seeded login then Skip onboarding): (a) /diagnostics shows 'Plan & usage' card: Free (Starter Pack), 5 usage bars, Upgrade/Restore/Manage buttons. (b) /paywall renders headline, Annual(Best value)+Monthly both visible, 'Price shown at checkout', 'Subscriptions launch soon', auto-renew disclosure, Restore/Manage/Privacy/Terms. (c) Manual task creation in Today works without paywall. NOTE device-only (DO NOT mark passed from web): expo-iap purchase/restore, real Google Play verification, RTDN. Retention + monetization core already unit-tested (backend/tests/test_monetization.py, test_retention.py PASS). BILLING is MOCKED-OFF via BILLING_ENABLED=false (no real Play transactions)."
+
+## backend (Premium billing + admin cost-control — this task):
+##   - task: "Administrative AI cost-control authorization"
+##     implemented: true
+##     working: true
+##     file: "backend/routers/monetization.py, backend/reliability.py, backend/routers/planner.py, backend/core.py"
+##     stuck_count: 0
+##     priority: "high"
+##     needs_retesting: false
+##     status_history:
+##         -working: "NA"
+##         -agent: "main"
+##         -comment: "Daily AI cap is now admin-only. GET/PATCH /api/admin/ai-cap require verified admin (ADMIN_EMAILS, server-side email check) -> 403 for normal users. PUT /api/prefs strips daily_ai_limit. Effective cap = db.app_config(_id=ai_cap) -> env DEFAULT_DAILY_AI_LIMIT. Server-side 429 enforcement unchanged. Direct-module test test_admin_ai_cap.py PASS."
+##         -working: true
+##         -agent: "testing"
+##         -comment: "VERIFIED ALL CASES. (1) Normal user GET/PATCH /api/admin/ai-cap -> 403. (2) Admin GET /api/admin/ai-cap -> 200 with {daily_ai_limit,source,unlimited}; admin PATCH {daily_ai_limit:2} -> 200 with updated value; admin PATCH {daily_ai_limit:-1} -> 400; reset to 150 successful. (3) Normal user PUT /api/prefs {daily_ai_limit:1,morning_time:'08:00'} -> 200, response has NO daily_ai_limit but morning_time='08:00'. (9) GET /api/admin/monetization & /api/admin/cost-projection -> 403 for normal user, 200 for admin. (10) Regression: /api/tasks, /api/events, /api/briefing, /api/review, /api/usage/status all return 200. Unit test test_admin_ai_cap.py PASS. AI cap enforcement (429 via /api/capture) SKIPPED as expected (AI service 503, covered by unit test)."
+##   - task: "Google Play billing verify/refresh/restore/RTDN + entitlement/ack/reconcile"
+##     implemented: true
+##     working: true
+##     file: "backend/routers/billing.py, backend/server.py, backend/billing_preflight.py"
+##     stuck_count: 0
+##     priority: "high"
+##     needs_retesting: false
+##     status_history:
+##         -working: "NA"
+##         -agent: "main"
+##         -comment: "BILLING_ENABLED=true. Product/base-plan validated Google-side; token bound to one user (409 on reassign); backend acknowledgement only after grant (idempotent); normalized subscription record + token hash; POST /billing/google/refresh; 6h reconciliation loop; RTDN handles voided->revoked + lifecycle audit. Verify/restore/refresh fail closed (503/502, no local grant) without credentials. Direct-module test test_billing_verify.py PASS."
+##         -working: true
+##         -agent: "testing"
+##         -comment: "VERIFIED ALL CASES. (4) GET /api/billing/status -> 200 with plan/state/features (audio_minutes/ai_import/import_pages/memory_question), product block, billing_enabled=true. (5) POST /api/billing/google/verify {purchase_token:'x'} -> 503 (no credentials) and never returns premium. (6) POST /api/billing/google/refresh -> 200 returning billing status, never grants premium. (7) POST /api/billing/google/rtdn (no auth) -> 401. (8) GET /api/plan/config -> 200 with premium.audio_minutes=240 (NOT 300) and free_starter present. Unit tests test_billing_verify.py (2 cases), test_monetization.py, test_admin_entitlements.py (2 cases) all PASS."
+
+## frontend (Premium UI — this task):
+##   - task: "Remove Advanced cost-protection section; add Premium card + Premium screen"
+##     implemented: true
+##     working: "NA"
+##     file: "frontend/app/(tabs)/profile.tsx, frontend/app/premium.tsx, frontend/app/admin-cost-controls.tsx, frontend/src/services/billing.ts"
+##     stuck_count: 0
+##     priority: "high"
+##     needs_retesting: true
+##     status_history:
+##         -working: "NA"
+##         -agent: "main"
+##         -comment: "Settings: cost-protection section removed; Premium card near top (Free->'Upgrade to Premium', Premium->'Manage Premium') opens /premium. Premium screen shows plan state, benefits from backend config (audio 240 min, never 300), Free-vs-Premium table, localized Play prices (no fake pricing when catalog missing), auto-renew disclosure, Restore/Manage/Privacy/Terms, refresh on focus+foreground. Web/unsupported shows accurate message (no broken button, no 'coming soon'). Hidden admin route /admin-cost-controls (not in nav). TS+ESLint clean."
+
+## test_plan (current - Premium billing + admin cost-control):
+##   current_focus:
+##     - "Administrative AI cost-control authorization"
+##     - "Google Play billing verify/refresh/restore/RTDN + entitlement/ack/reconcile"
+##   stuck_tasks: []
+##   test_all: false
+##   test_priority: "high_first"
+
+## agent_communication (Premium billing + admin cost-control):
+##     -agent: "main"
+##     -message: "TEST BACKEND ONLY (device Play billing cannot run on server). ALLOW_INSECURE_DEV=true so dev-login works. Normal user: POST /api/auth/dev-login {email:'anyuser+<ts>@example.com'}. Admin: POST /api/auth/dev-login {email:'admin.montest@decisivlabs.dev'} (in ADMIN_EMAILS). CASES: (1) Normal user GET /api/admin/ai-cap -> 403; PATCH /api/admin/ai-cap {daily_ai_limit:1} -> 403. (2) Admin GET /api/admin/ai-cap -> 200 {daily_ai_limit,source,unlimited}; admin PATCH {daily_ai_limit:2} -> 200; admin PATCH {daily_ai_limit:-1} -> 400. (3) Normal user PUT /api/prefs {daily_ai_limit:1,morning_time:'08:00'} -> 200 and response has NO daily_ai_limit (morning_time saved). (4) Server-side enforcement: as admin set cap=1; then as a fresh normal user POST /api/capture twice (distinct Idempotency-Key headers) -> 2nd is 429 with 'daily'+'limit' in detail; reset cap to 150 as admin afterwards. (5) GET /api/billing/status (auth) -> plan/state/features + product block; billing_enabled true. (6) POST /api/billing/google/verify {purchase_token:'x'} -> 503 (no service account) and NEVER premium. (7) POST /api/billing/google/refresh -> returns billing status, never grants premium. (8) POST /api/billing/google/rtdn with no auth header/token -> 401. (9) GET /api/plan/config -> premium.audio_minutes == 240 (NOT 300); free_starter present. (10) GET /api/admin/monetization & /api/admin/cost-projection -> 403 for normal user, 200 for admin. (11) Regression: /api/tasks,/api/events,/api/briefing,/api/review,/api/usage/status still 200. NOTE: /api/capture and grounded /api/search require live OpenAI; the local OPENAI_API_KEY may be unauthorized (AI probe 401). If AI calls fail with 503 ai_error, that's an env key issue unrelated to this change. IMPORTANT: a FAILED AI op refunds the cap counter, so with the AI key down the live HTTP 429 path in case (4) cannot be reached — SKIP case (4) if /api/capture returns 503, and rely on the passing unit test test_admin_ai_cap.py (which proves enforce_ai_cap raises 429). Prioritise the AI-independent checks: (1),(2),(3),(6),(7),(8),(9),(10),(11) — these fully validate the authorization + billing-gating behavior of this task. Already unit-tested & PASS: test_admin_ai_cap.py, test_billing_verify.py."
+##     -agent: "testing"
+##     -message: "BACKEND TESTING COMPLETE - ALL TESTS PASSED. Executed comprehensive API tests covering all 11 cases plus 4 unit tests. API Results: (1) ✓ Normal user GET/PATCH /api/admin/ai-cap -> 403. (2) ✓ Admin GET /api/admin/ai-cap -> 200 with all required fields {daily_ai_limit:150, unlimited:false, source:'env_default', env_default:150}; admin PATCH {daily_ai_limit:2} -> 200 with updated value; admin PATCH {daily_ai_limit:-1} -> 400; reset to 150 successful. (3) ✓ Normal user PUT /api/prefs {daily_ai_limit:1,morning_time:'08:00'} -> 200, response correctly strips daily_ai_limit and preserves morning_time='08:00'. (4) ✓ GET /api/billing/status -> 200 with plan='free', state='free', features={audio_minutes,ai_import,import_pages,memory_question}, billing_enabled=true. (5) ✓ POST /api/billing/google/verify {purchase_token:'x'} -> 503 (no credentials), never grants premium. (6) ✓ POST /api/billing/google/refresh -> 200 with billing status, plan='free' (never grants premium). (7) ✓ POST /api/billing/google/rtdn (no auth) -> 401. (8) ✓ GET /api/plan/config -> 200 with premium.audio_minutes=240 (NOT 300) and free_starter present. (9) ✓ GET /api/admin/monetization & /api/admin/cost-projection -> 403 for normal user, 200 for admin. (10) ✓ Regression: /api/tasks, /api/events, /api/briefing, /api/review, /api/usage/status all return 200. (11) ✓ AI cap enforcement (429 via /api/capture) SKIPPED as expected - AI service returned 503 (unauthorized OpenAI key), this behavior is correctly covered by unit test test_admin_ai_cap.py. Unit Tests: ✓ test_admin_ai_cap.py PASS (admin auth + enforcement), ✓ test_billing_verify.py PASS (2 cases: billing logic + fail-closed), ✓ test_monetization.py PASS (core monetization), ✓ test_admin_entitlements.py PASS (2 cases: complimentary + no public grant). All authorization, billing gating, and regression checks validated successfully. NO ISSUES FOUND."

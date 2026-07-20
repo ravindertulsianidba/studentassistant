@@ -129,10 +129,13 @@ def conf_label(c: float) -> str:
 
 async def get_prefs(uid) -> dict:
     p = await db.prefs.find_one({"user_id": uid}, {"_id": 0})
-    return p or {"user_id": uid, "auto_create_tasks": True, "morning_time": "07:30",
-                 "evening_time": "20:00", "weekly_day": "Sun", "weekly_time": "18:00",
-                 "default_reminder_min": 60, "quiet_start": "22:00", "quiet_end": "07:00",
-                 "daily_ai_limit": config.DEFAULT_DAILY_AI_LIMIT}
+    if p:
+        # Never expose the administrative AI cap through consumer preferences (legacy docs).
+        p.pop("daily_ai_limit", None)
+        return p
+    return {"user_id": uid, "auto_create_tasks": True, "morning_time": "07:30",
+            "evening_time": "20:00", "weekly_day": "Sun", "weekly_time": "18:00",
+            "default_reminder_min": 60, "quiet_start": "22:00", "quiet_end": "07:00"}
 
 # ---------------- risk-based routing ----------------
 def is_high_risk(it: dict) -> bool:

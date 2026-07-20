@@ -334,7 +334,13 @@ async def read_prefs(uid: str = CurrentUser):
 
 @router.put("/prefs")
 async def write_prefs(body: Dict[str, Any], uid: str = CurrentUser):
-    body.pop("_id", None); body["user_id"] = uid
+    body.pop("_id", None)
+    # The daily AI request cap is an administrative cost-protection control, NOT a consumer
+    # preference. Silently ignore any attempt to set it here so normal users can never change
+    # (or even discover) the internal cap through the general preferences endpoint. Managing
+    # the cap requires verified admin authorization at /api/admin/ai-cap.
+    body.pop("daily_ai_limit", None)
+    body["user_id"] = uid
     await db.prefs.update_one({"user_id": uid}, {"$set": body}, upsert=True)
     return await get_prefs(uid)
 

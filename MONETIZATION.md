@@ -86,4 +86,65 @@ and few users hit full quota. Guardrails: target ≤20%, alert 20%, critical 30%
 - Paywall links `PRIVACY_URL` / `TERMS_URL` in `app/paywall.tsx` — replace with the live URLs.
 
 ## Tests
-`backend/tests/test_monetization.py`, `test_retention.py`, `test_reset_token_check.py`.
+`backend/tests/test_monetization.py`, `test_retention.py`, `test_reset_token_check.py`,
+`test_admin_ai_cap.py` (admin cost-control authorization), `test_billing_verify.py`
+(Play verification / entitlement / acknowledgement / lifecycle / reconciliation, mocked Play).
+
+## Administrative cost control (AI request cap)
+The daily AI request cap is an INTERNAL cost-protection control — never a consumer preference.
+- Read/change requires a verified administrator (server-side `ADMIN_EMAILS` check against the
+  account's real stored email): `GET /api/admin/ai-cap`, `PATCH /api/admin/ai-cap`.
+- A normal authenticated user receives **HTTP 403** from those endpoints.
+- `PUT /api/prefs` silently ignores `daily_ai_limit` (consumers can't change or discover the cap).
+- The effective cap = admin override (`db.app_config._id="ai_cap"`) → env `DEFAULT_DAILY_AI_LIMIT`.
+- Server-side enforcement (`reliability.enforce_ai_cap`, 429 when exceeded; 0 = unlimited) is
+  unchanged and always active.
+- The consumer "Advanced · cost protection" Settings section is REMOVED. A hidden, admin-only
+  screen (`app/admin-cost-controls.tsx`, deep link `/admin-cost-controls`, not in consumer nav)
+  exposes the control to authorized admins and shows "not authorized" (backend 403) otherwise.
+
+## Premium entitlement policy (documented, backend-authoritative)
+| Play state (subscriptionsv2) | Internal state | Premium access? |
+|---|---|---|
+| ACTIVE | active | YES (renews) |
+| CANCELED (before expiry) | cancelled_active_until_period_end | YES until period end (auto-renew off) |
+| IN_GRACE_PERIOD | grace_period | YES (retain; prompt to fix payment) |
+| PAUSED | paused | YES until resume/expire |
+| ON_HOLD | account_hold | **NO** (entitlement removed until recovered) |
+| PENDING | pending | **NO** (never grant a pending purchase) |
+| EXPIRED | expired | NO → Free (data retained) |
+| Voided / revoked (RTDN voidedPurchaseNotification) | revoked | NO (entitlement removed, idempotent) |
+
+Acknowledgement is performed via the Play Developer API ONLY after a Premium entitlement is
+persisted, is idempotent (skips already-acknowledged), and never runs for pending/invalid
+purchases. All verification/lifecycle processing is idempotent and fails closed (no local grant).
+Purchase tokens are stored bound to one user (replay/reassignment → HTTP 409); logs use a token
+hash, never the raw token or service-account credentials.
+
+## Billing endpoints (authenticated, rate-limited)
+`GET /api/billing/status` (entitlement + usage), `POST /api/billing/google/verify`,
+`POST /api/billing/google/refresh` (re-query Play for the stored token),
+`POST /api/billing/google/restore`, `POST /api/billing/google/rtdn` (authenticated Pub/Sub push;
+re-queries Play, never trusts the payload; handles purchased/renewed/recovered/restarted/canceled/
+paused/grace/on-hold/expired/revoked/pending-canceled/plan-replacement + linked/replacement tokens).
+A 6-hourly reconciliation loop (`routers/billing.reconcile_once`) re-verifies active subscriptions
+in case an RTDN is missed. Preflight: `python -m billing_preflight` (fails closed when billing is
+enabled but credentials are missing; passes with mocked credentials — no real secrets needed).
+
+## Play Console handoff checklist (external — NOT verified from code)
+1. Create subscription `student_assistant_premium`.
+2. Create monthly base plan `monthly`; set CAD 11.99.
+3. Create annual base plan `annual`; set CAD 109.99.
+4. Activate BOTH base plans; set regional availability (incl. Canada).
+5. Add accurate subscription benefits (match this doc; audio = 240 min / 30 days).
+6. Configure grace period; configure account hold; enable resubscribe where appropriate.
+7. Configure Google Play Developer API access; create/connect the service account; grant only the
+   minimum required permissions; set `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` on the server.
+8. Create the Pub/Sub topic + push subscription to `/api/billing/google/rtdn`; enable RTDN in Play
+   Console (Monetization setup); set `PUBSUB_SERVICE_ACCOUNT_EMAIL` (OIDC) or `PUBSUB_VERIFICATION_TOKEN`.
+9. Add license testers; test on the internal-testing track: monthly purchase, annual purchase,
+   pending payment, cancellation, renewal, restore, reinstall, device change, account hold, grace
+   period, expiration, revocation, plan replacement.
+10. Set `BILLING_ENABLED=true`, `EXPO_PUBLIC_BILLING_ENABLED=true`,
+    `EXPO_PUBLIC_MONETIZATION_EXPECTED=true`, `ADMIN_EMAILS`; re-run both preflights.
+

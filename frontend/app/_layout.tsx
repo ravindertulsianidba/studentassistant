@@ -87,6 +87,8 @@ function RootNav() {
       <Stack.Screen name="listen" options={{ presentation: "modal" }} />
       <Stack.Screen name="diagnostics" options={{ presentation: "modal" }} />
       <Stack.Screen name="paywall" options={{ presentation: "modal" }} />
+      <Stack.Screen name="premium" options={{ presentation: "modal" }} />
+      <Stack.Screen name="admin-cost-controls" options={{ presentation: "modal" }} />
       <Stack.Screen name="quick-capture" options={{ presentation: "modal" }} />
       <Stack.Screen name="notes" options={{ presentation: "modal" }} />
       <Stack.Screen name="record" options={{ presentation: "modal" }} />

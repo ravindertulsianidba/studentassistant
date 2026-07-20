@@ -356,25 +356,41 @@ class TestIdempotency:
         usage2 = s.get(f"{BASE}/api/ai-usage", timeout=15).json()["used"]
         assert usage2 == usage1, f"replay should NOT increment ai-usage (was {usage1}, now {usage2})"
 
-# -------------------- 10. DAILY AI CAP --------------------
+# -------------------- 10. DAILY AI CAP (admin-managed cost control) --------------------
+ADMIN_EMAIL = os.environ.get("ADMIN_TEST_EMAIL", "admin.montest@decisivlabs.dev")
+
+
 class TestAICap:
+    def test_normal_user_cannot_manage_cap(self):
+        s, _, _ = _mk_user("capauth")
+        assert s.get(f"{BASE}/api/admin/ai-cap", timeout=15).status_code == 403
+        assert s.patch(f"{BASE}/api/admin/ai-cap", json={"daily_ai_limit": 1}, timeout=15).status_code == 403
+        pr = s.put(f"{BASE}/api/prefs", json={"daily_ai_limit": 1, "morning_time": "08:30"}, timeout=15)
+        assert pr.status_code == 200 and "daily_ai_limit" not in pr.json(), pr.text
+
     def test_daily_cap_429(self):
-        s, _, _ = _mk_user("cap")
-        # set daily limit to 1
-        r = s.put(f"{BASE}/api/prefs", json={"daily_ai_limit": 1}, timeout=15)
-        assert r.status_code == 200
+        admin_s = requests.Session()
+        r = requests.post(f"{BASE}/api/auth/dev-login", json={"email": ADMIN_EMAIL}, timeout=20)
+        r.raise_for_status()
+        admin_s.headers.update({"Content-Type": "application/json",
+                                "Authorization": f"Bearer {r.json()['access_token']}"})
+        set_res = admin_s.patch(f"{BASE}/api/admin/ai-cap", json={"daily_ai_limit": 1}, timeout=15)
+        if set_res.status_code == 403:
+            import pytest as _pt
+            _pt.skip(f"{ADMIN_EMAIL} not in ADMIN_EMAILS on this backend; cannot exercise cap.")
+        assert set_res.status_code == 200, set_res.text
 
-        r1 = s.post(f"{BASE}/api/capture", json={"text": "meeting Monday 9am"},
-                    headers={"Idempotency-Key": f"cap-1-{uuid.uuid4().hex[:6]}"}, timeout=60)
-        assert r1.status_code == 200, r1.text
-
-        r2 = s.post(f"{BASE}/api/capture", json={"text": "another meeting"},
-                    headers={"Idempotency-Key": f"cap-2-{uuid.uuid4().hex[:6]}"}, timeout=60)
-        assert r2.status_code == 429, r2.text
-        assert "limit" in r2.text.lower()
-
-        # restore
-        s.put(f"{BASE}/api/prefs", json={"daily_ai_limit": 150}, timeout=15)
+        try:
+            s, _, _ = _mk_user("cap")
+            r1 = s.post(f"{BASE}/api/capture", json={"text": "meeting Monday 9am"},
+                        headers={"Idempotency-Key": f"cap-1-{uuid.uuid4().hex[:6]}"}, timeout=60)
+            assert r1.status_code == 200, r1.text
+            r2 = s.post(f"{BASE}/api/capture", json={"text": "another meeting"},
+                        headers={"Idempotency-Key": f"cap-2-{uuid.uuid4().hex[:6]}"}, timeout=60)
+            assert r2.status_code == 429, r2.text
+            assert "limit" in r2.text.lower()
+        finally:
+            admin_s.patch(f"{BASE}/api/admin/ai-cap", json={"daily_ai_limit": 150}, timeout=15)
         r = s.get(f"{BASE}/api/ai-usage", timeout=15).json()
         for k in ("used", "limit", "remaining"):
             assert k in r, f"missing {k} in {r}"

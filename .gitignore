@@ -90,3 +90,6 @@ credentials.json
 
 # Safe frontend environment template
 !frontend/.env.example
+
+# Safe backend environment template (placeholders only — never real secrets)
+!backend/.env.example

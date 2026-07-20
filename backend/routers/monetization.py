@@ -3,14 +3,14 @@ import logging
 import uuid
 from datetime import datetime, timezone, timedelta
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 from typing import Optional
 
 import config
 import monetization as mon
 from db import db
-from core import CurrentUser
+from core import CurrentUser, rate_limit
 
 logger = logging.getLogger("student-assistant")
 router = APIRouter(prefix="/api")
@@ -134,3 +134,46 @@ async def admin_monetization(uid: str = CurrentUser):
 async def admin_cost_projection(uid: str = CurrentUser):
     await _require_admin(uid)
     return mon.project_costs()
+
+
+# ---------------- administrative AI cost-protection cap ----------------
+# The daily AI request cap is an internal cost-protection control. Reading or changing it
+# REQUIRES verified administrator authorization (server-side check against ADMIN_EMAILS using
+# the account's real stored email — never a client-provided flag). Normal authenticated users
+# receive HTTP 403. Server-side enforcement of the cap continues regardless (reliability.py).
+import reliability as _rel  # noqa: E402
+
+
+class AiCapIn(BaseModel):
+    daily_ai_limit: int
+
+
+@router.get("/admin/ai-cap")
+async def admin_get_ai_cap(uid: str = CurrentUser):
+    await _require_admin(uid)
+    override = await db.app_config.find_one({"_id": "ai_cap"}, {"_id": 0})
+    effective = await _rel.get_effective_ai_limit(db)
+    return {
+        "daily_ai_limit": effective,
+        "unlimited": effective <= 0,
+        "source": "admin_override" if (override and override.get("daily_ai_limit") is not None) else "env_default",
+        "env_default": config.DEFAULT_DAILY_AI_LIMIT,
+    }
+
+
+@router.patch("/admin/ai-cap")
+async def admin_set_ai_cap(body: AiCapIn, request: Request, uid: str = CurrentUser):
+    email = await _require_admin(uid)
+    rate_limit(request, "admin_ai_cap", limit=20, window=60)
+    if body.daily_ai_limit < 0:
+        raise HTTPException(status_code=400, detail="daily_ai_limit must be >= 0 (0 = unlimited).")
+    await db.app_config.update_one(
+        {"_id": "ai_cap"},
+        {"$set": {"daily_ai_limit": int(body.daily_ai_limit), "updated_by": email,
+                  "updated_at": _iso(datetime.now(timezone.utc))}},
+        upsert=True)
+    await db.admin_audit.insert_one({
+        "audit_id": str(uuid.uuid4()), "action": "set_ai_cap", "actor": email,
+        "daily_ai_limit": int(body.daily_ai_limit), "ts": _iso(datetime.now(timezone.utc))})
+    effective = await _rel.get_effective_ai_limit(db)
+    return {"ok": True, "daily_ai_limit": effective, "unlimited": effective <= 0}

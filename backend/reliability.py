@@ -169,11 +169,28 @@ async def idem_store(db, uid, key, endpoint, response):
         pass  # unique index race → another request stored it first
 
 
-# ---------------- daily AI usage cap ----------------
-async def enforce_ai_cap(db, uid, prefs):
-    """Increment today's AI usage; raise 429 if over the per-user daily cap.
-    Cap is prefs['daily_ai_limit'] or the admin default (env). Never hardcoded low."""
-    limit = int(prefs.get("daily_ai_limit") or config.DEFAULT_DAILY_AI_LIMIT)
+# ---------------- daily AI usage cap (ADMINISTRATIVE, not user-facing) ----------------
+# The daily AI request cap is an internal cost-protection control. It is NOT a consumer
+# preference: only a verified administrator may read or change it (see routers/monetization
+# /api/admin/ai-cap). The effective cap is the admin override stored in db.app_config
+# (doc _id="ai_cap"), falling back to the server env default. `prefs` is accepted for call
+# compatibility but its daily_ai_limit (if any legacy value exists) is intentionally ignored.
+async def get_effective_ai_limit(db) -> int:
+    """Return the administrative daily AI cap. Admin override (db.app_config) > env default.
+    0 (or negative) means unlimited. Never sourced from a client/user preference."""
+    try:
+        doc = await db.app_config.find_one({"_id": "ai_cap"})
+        if doc is not None and doc.get("daily_ai_limit") is not None:
+            return int(doc["daily_ai_limit"])
+    except Exception:
+        pass
+    return int(config.DEFAULT_DAILY_AI_LIMIT)
+
+
+async def enforce_ai_cap(db, uid, prefs=None):
+    """Increment today's AI usage; raise 429 if over the administrative daily cap.
+    Cap comes exclusively from get_effective_ai_limit (admin-controlled). Never hardcoded low."""
+    limit = await get_effective_ai_limit(db)
     if limit <= 0:  # 0 == unlimited
         return
     day = datetime.now(timezone.utc).strftime("%Y-%m-%d")
@@ -198,8 +215,8 @@ async def refund_ai_cap(db, uid):
         await db.ai_usage.update_one({"user_id": uid, "date": day}, {"$inc": {"count": -1}})
 
 
-async def ai_usage_status(db, uid, prefs):
-    limit = int(prefs.get("daily_ai_limit") or config.DEFAULT_DAILY_AI_LIMIT)
+async def ai_usage_status(db, uid, prefs=None):
+    limit = await get_effective_ai_limit(db)
     day = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     doc = await db.ai_usage.find_one({"user_id": uid, "date": day}, {"_id": 0})
     used = (doc or {}).get("count", 0)

@@ -173,39 +173,58 @@ class TestIdempotency:
 
 
 # --------------------------------------------------------------------------
-# 4. Daily AI cap
+# 4. Daily AI cap (administrative cost-control — admin-managed only)
 # --------------------------------------------------------------------------
-class TestAICap:
-    def test_daily_cap_returns_429(self):
-        h, _ = _login()
+ADMIN_EMAIL = os.environ.get("ADMIN_TEST_EMAIL", "admin.montest@decisivlabs.dev")
 
-        # set daily limit to 1
-        pr = requests.put(f"{BASE}/api/prefs", json={"daily_ai_limit": 1},
+
+class TestAICap:
+    def test_normal_user_cannot_manage_cap(self):
+        """A normal user is forbidden (403) from reading or changing the admin AI cap, and
+        cannot change it through the general preferences endpoint (field is ignored)."""
+        h, _ = _login()
+        assert requests.get(f"{BASE}/api/admin/ai-cap", headers=h, timeout=30).status_code == 403
+        assert requests.patch(f"{BASE}/api/admin/ai-cap", json={"daily_ai_limit": 1},
+                              headers=h, timeout=30).status_code == 403
+        # Consumer prefs must silently ignore daily_ai_limit.
+        pr = requests.put(f"{BASE}/api/prefs", json={"daily_ai_limit": 1, "morning_time": "08:20"},
                           headers=h, timeout=30)
         assert pr.status_code == 200
-        assert pr.json()["daily_ai_limit"] == 1
+        assert "daily_ai_limit" not in pr.json(), pr.json()
 
-        # 1st AI call — success (capture always consumes quota)
-        s1 = requests.post(f"{BASE}/api/capture", json={"text": "read chapter 3"},
-                           headers={**h, "Idempotency-Key": f"cap-{uuid.uuid4().hex[:6]}"},
-                           timeout=30)
-        assert s1.status_code == 200, s1.text
+    def test_daily_cap_returns_429(self):
+        # Only an administrator may set the cap.
+        ah, _ = _login(ADMIN_EMAIL)
+        set_res = requests.patch(f"{BASE}/api/admin/ai-cap", json={"daily_ai_limit": 1},
+                                 headers=ah, timeout=30)
+        if set_res.status_code == 403:
+            import pytest as _pt
+            _pt.skip(f"{ADMIN_EMAIL} is not in ADMIN_EMAILS on this backend; cannot exercise cap.")
+        assert set_res.status_code == 200, set_res.text
+        assert set_res.json()["daily_ai_limit"] == 1
 
-        # 2nd AI call with different endpoint & new idempotency key -> 429
-        s2 = requests.post(f"{BASE}/api/capture", json={"text": "email prof"},
-                           headers={**h, "Idempotency-Key": f"cap-{uuid.uuid4().hex[:6]}"},
-                           timeout=30)
-        assert s2.status_code == 429, f"expected 429 got {s2.status_code}: {s2.text}"
-        detail = s2.json().get("detail", "").lower()
-        assert "daily" in detail and "limit" in detail, detail
-
-        # reset
-        requests.put(f"{BASE}/api/prefs", json={"daily_ai_limit": 150},
-                     headers=h, timeout=30)
-        usage = requests.get(f"{BASE}/api/ai-usage", headers=h, timeout=30).json()
+        try:
+            h, _ = _login()
+            # 1st AI call — success (capture always consumes quota)
+            s1 = requests.post(f"{BASE}/api/capture", json={"text": "read chapter 3"},
+                               headers={**h, "Idempotency-Key": f"cap-{uuid.uuid4().hex[:6]}"},
+                               timeout=30)
+            assert s1.status_code == 200, s1.text
+            # 2nd AI call -> 429 (over administrative cap)
+            s2 = requests.post(f"{BASE}/api/capture", json={"text": "email prof"},
+                               headers={**h, "Idempotency-Key": f"cap-{uuid.uuid4().hex[:6]}"},
+                               timeout=30)
+            assert s2.status_code == 429, f"expected 429 got {s2.status_code}: {s2.text}"
+            detail = s2.json().get("detail", "").lower()
+            assert "daily" in detail and "limit" in detail, detail
+        finally:
+            # reset to a generous cap
+            requests.patch(f"{BASE}/api/admin/ai-cap", json={"daily_ai_limit": 150},
+                           headers=ah, timeout=30)
+        # ai-usage still reports a sanitized shape
+        usage = requests.get(f"{BASE}/api/ai-usage", headers=_login()[0], timeout=30).json()
         for k in ("used", "limit", "remaining", "unlimited"):
             assert k in usage, usage
-        assert usage["limit"] == 150
 
 
 # --------------------------------------------------------------------------
