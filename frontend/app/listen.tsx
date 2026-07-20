@@ -114,7 +114,7 @@ export default function Listen() {
             <TextInput style={styles.input} value={course} onChangeText={setCourse} placeholder="e.g. HIST 210" placeholderTextColor={C.onSurface3} testID="listen-course" />
             <View style={styles.stage}>
               <Pressable style={styles.startBtn} onPress={start} testID="listen-start"><Feather name="radio" size={34} color={C.onBrand} /></Pressable>
-              <Text style={styles.note}>You start it. Student Assistant listens, then routes anything you're asked to do into your AI Inbox for review.</Text>
+              <Text style={styles.note}>You start it. Student Assistant listens, then routes anything you’re asked to do into your AI Inbox for review.</Text>
               {isWeb ? <Text style={styles.note}>Live audio needs the installed app — you can still type what was said below to test the flow.</Text> : null}
             </View>
           </>

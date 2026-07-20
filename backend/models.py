@@ -62,6 +62,12 @@ class NotesIn(BaseModel):
     transcript: str
 
 
+class ManualNoteIn(BaseModel):
+    title: str
+    course: Optional[str] = None
+    body: Optional[str] = None
+
+
 class SearchIn(BaseModel):
     query: str
 

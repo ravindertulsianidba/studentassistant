@@ -14,6 +14,7 @@ from starlette.middleware.cors import CORSMiddleware
 import config
 import ai_service
 import vectorstore as vs
+import security_redaction
 from db import db, client
 from core import now_iso, logger
 from routers import auth, content, planner, reliability, calendar, listen, diagnostics, billing, monetization
@@ -21,6 +22,7 @@ import monetization as mon_svc
 import retention
 
 logging.getLogger("student-assistant")
+security_redaction.install()
 
 app = FastAPI(title="Student Assistant API")
 
@@ -32,10 +34,20 @@ async def health():
         await db.command("ping")
     except Exception:
         ok = False
+    # ai_configured = required config present. ai_live = a recent probe succeeded.
+    # The probe result is CACHED (ttl) so we never call the provider on every request.
+    ai_configured = (config.AI_PROVIDER == "fixture") or bool(config.OPENAI_API_KEY)
+    live = {"ok": False, "last_checked": None}
+    if ai_configured:
+        try:
+            live = await ai_service.get_live_status()
+        except Exception:
+            live = {"ok": False, "last_checked": None}
     return {"status": "ok" if ok else "degraded", "db": ok,
             "ai_provider": config.AI_PROVIDER,
-            "ai_configured": (config.AI_PROVIDER == "fixture") or bool(config.OPENAI_API_KEY),
-            "ai_live": config.AI_PROVIDER == "openai" and bool(config.OPENAI_API_KEY),
+            "ai_configured": ai_configured,
+            "ai_live": bool(live.get("ok")),
+            "ai_last_checked": live.get("last_checked"),
             "vector_search": vs.enabled(),
             "google_configured": bool(config.GOOGLE_CLIENT_ID),
             "time": now_iso()}
@@ -43,7 +55,9 @@ async def health():
 
 @app.exception_handler(ai_service.AIError)
 async def ai_error(request: Request, exc: ai_service.AIError):
-    return JSONResponse(status_code=503, content={"detail": str(exc)})
+    # Sanitized: generic message + opaque category. No provider name/credential/model.
+    return JSONResponse(status_code=503, content={
+        "detail": ai_service.USER_MESSAGE, "error_category": exc.category, "ai_error": True})
 
 
 @app.exception_handler(Exception)

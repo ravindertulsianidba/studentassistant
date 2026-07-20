@@ -137,7 +137,7 @@ export default function Today() {
               ) : null}
 
               <View style={{ marginTop: S.xl }}>
-                <SectionTitle>Today's schedule</SectionTitle>
+                <SectionTitle>Today’s schedule</SectionTitle>
                 {data?.today_classes?.length ? data.today_classes.map((e: any) => (
                   e.external ? (
                     <Card key={e.id} style={styles.rowCard} testID={`ext-${e.id}`}>

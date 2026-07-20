@@ -39,7 +39,7 @@ export default function Inbox() {
       <View style={[styles.header, { paddingTop: insets.top + S.sm }]}>
         <View style={{ flex: 1 }}>
           <Text style={styles.title}>AI Inbox</Text>
-          <Text style={styles.sub}>Review what your assistant detected before it's saved.</Text>
+          <Text style={styles.sub}>Review what your assistant detected before it’s saved.</Text>
         </View>
         <View style={styles.close} onTouchEnd={() => router.back()}>
           <Feather name="x" size={22} color={C.onSurface2} testID="inbox-close" />

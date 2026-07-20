@@ -31,8 +31,22 @@ except Exception:  # pragma: no cover
     retry = None
 
 
+# Single generic, provider-agnostic message shown to end users. NEVER leak the
+# provider name, credential state, model, quota-account details or raw exception.
+USER_MESSAGE = ("AI processing is temporarily unavailable. "
+                "Try again or add the information manually.")
+
+# Structured internal categories (safe to expose as an opaque code; carry no secret).
+CATEGORIES = ("ai_unavailable", "authentication_failure", "quota_exceeded",
+              "rate_limited", "timeout", "network_failure", "processing_failure")
+
+
 class AIError(Exception):
-    pass
+    """Sanitized AI failure. `str(exc)` is ALWAYS the generic user message.
+    The internal category is available via `.category` (opaque code, no secrets)."""
+    def __init__(self, category: str = "ai_unavailable"):
+        self.category = category if category in CATEGORIES else "processing_failure"
+        super().__init__(USER_MESSAGE)
 
 
 _client = None
@@ -45,32 +59,48 @@ def provider() -> str:
 def _get_client():
     global _client
     if not config.OPENAI_API_KEY:
-        raise AIError("AI is not configured: OPENAI_API_KEY is missing.")
+        # Missing configuration — treated as unavailable, never surfaced as a key error.
+        raise AIError("ai_unavailable")
     if AsyncOpenAI is None:
-        raise AIError("openai package not installed")
+        raise AIError("ai_unavailable")
     if _client is None:
         _client = AsyncOpenAI(api_key=config.OPENAI_API_KEY)
     return _client
 
 
+def _classify(e: Exception) -> str:
+    """Map a raw provider/transport exception to an internal category.
+    Only the category (an opaque code) is ever kept; raw text is discarded."""
+    msg = str(getattr(e, "message", "") or e).lower()
+    status = getattr(e, "status_code", None)
+    name = type(e).__name__.lower()
+    if "insufficient_quota" in msg or status == 402 or "quota" in msg:
+        return "quota_exceeded"
+    if status == 401 or "invalid_api_key" in msg or "authentication" in msg or "api key" in msg:
+        return "authentication_failure"
+    if status == 429 or "rate limit" in msg or "ratelimit" in name:
+        return "rate_limited"
+    if "timeout" in msg or "timed out" in msg or "timeout" in name:
+        return "timeout"
+    if ("connection" in msg or "network" in msg or "connect" in name
+            or "apiconnection" in name):
+        return "network_failure"
+    if status in (500, 502, 503, 504) or "server" in msg or "unavailable" in msg:
+        return "ai_unavailable"
+    return "processing_failure"
+
+
 def _fatal(e: Exception) -> bool:
-    """Non-retryable: quota exhausted or bad key."""
-    msg = str(getattr(e, "message", "") or e)
-    status = getattr(e, "status_code", None)
-    return ("insufficient_quota" in msg or "invalid_api_key" in msg
-            or status in (401, 402))
+    """Non-retryable: quota exhausted or bad key/auth."""
+    return _classify(e) in ("quota_exceeded", "authentication_failure")
 
 
-def _friendly(e: Exception) -> str:
-    msg = str(getattr(e, "message", "") or e)
-    status = getattr(e, "status_code", None)
-    if "insufficient_quota" in msg:
-        return "AI provider quota exceeded — add billing/credits to your OpenAI account."
-    if status == 401 or "invalid_api_key" in msg:
-        return "Invalid OpenAI API key."
-    if status == 429:
-        return "AI provider rate limit reached — please try again shortly."
-    return "AI provider is temporarily unavailable."
+def _ai_error(e: Exception, op: str) -> "AIError":
+    """Log the internal category ONLY (never the raw provider message) and return
+    a sanitized AIError."""
+    cat = _classify(e)
+    logger.error("AI error (%s): category=%s exc=%s", op, cat, type(e).__name__)
+    return AIError(cat)
 
 
 def _with_retry(coro_fn):
@@ -108,8 +138,7 @@ async def extract_json(system: str, user: str, image_b64: Optional[str] = None) 
     try:
         resp = await _with_retry(_call)()
     except OpenAIError as e:
-        logger.error("OpenAI error (extract_json): %s", type(e).__name__)
-        raise AIError(_friendly(e))
+        raise _ai_error(e, "extract_json")
     try:
         return json.loads(resp.choices[0].message.content or "{}")
     except Exception:
@@ -129,8 +158,7 @@ async def complete_text(system: str, user: str) -> str:
     try:
         resp = await _with_retry(_call)()
     except OpenAIError as e:
-        logger.error("OpenAI error (complete_text): %s", type(e).__name__)
-        raise AIError(_friendly(e))
+        raise _ai_error(e, "complete_text")
     return (resp.choices[0].message.content or "").strip()
 
 
@@ -147,8 +175,7 @@ async def transcribe(file_bytes: bytes, filename: str = "audio.m4a") -> str:
     try:
         resp = await _with_retry(_call)()
     except OpenAIError as e:
-        logger.error("OpenAI error (transcribe): %s", type(e).__name__)
-        raise AIError(_friendly(e))
+        raise _ai_error(e, "transcribe")
     return getattr(resp, "text", "") or ""
 
 
@@ -162,6 +189,67 @@ async def embed(text: str) -> List[float]:
     try:
         resp = await _with_retry(_call)()
     except OpenAIError as e:
-        logger.error("OpenAI error (embed): %s", type(e).__name__)
-        raise AIError(_friendly(e))
+        raise _ai_error(e, "embed")
     return resp.data[0].embedding
+
+
+# ---------------- health probe (cached; never called on every /health) ----------------
+import time as _time
+import asyncio as _asyncio
+
+# Cached AI liveness. `ok` is None until the first probe completes.
+_live_cache = {"ok": None, "category": None, "last_checked": None, "_ts": 0.0}
+# Test/injection hook: set to an async callable returning True to force a live result
+# without touching the network. Left None in production.
+_probe_override = None
+
+
+def set_live_status(ok: bool, category: str | None = None):
+    """Record a controlled probe result (used by integration probes / tests)."""
+    _live_cache.update({"ok": bool(ok), "category": category,
+                        "last_checked": _iso_now(), "_ts": _time.time()})
+
+
+def _iso_now() -> str:
+    from datetime import datetime, timezone
+    return datetime.now(timezone.utc).isoformat()
+
+
+async def _run_probe(timeout: float = 6.0) -> dict:
+    """A lightweight authenticated call to confirm the credential actually works.
+    Returns {'ok': bool, 'category': str|None}. Never raises; never leaks details."""
+    if provider() == "fixture":
+        return {"ok": True, "category": None}
+    if _probe_override is not None:
+        try:
+            ok = await _probe_override()
+            return {"ok": bool(ok), "category": None if ok else "authentication_failure"}
+        except Exception as e:  # pragma: no cover
+            return {"ok": False, "category": _classify(e)}
+    if not config.OPENAI_API_KEY or AsyncOpenAI is None:
+        return {"ok": False, "category": "ai_unavailable"}
+    try:
+        client = _get_client()
+        await _asyncio.wait_for(client.models.list(), timeout=timeout)
+        return {"ok": True, "category": None}
+    except AIError as e:
+        return {"ok": False, "category": e.category}
+    except _asyncio.TimeoutError:
+        logger.error("AI probe: category=timeout")
+        return {"ok": False, "category": "timeout"}
+    except Exception as e:
+        cat = _classify(e)
+        logger.error("AI probe: category=%s exc=%s", cat, type(e).__name__)
+        return {"ok": False, "category": cat}
+
+
+async def get_live_status(ttl: float = 300.0, force: bool = False) -> dict:
+    """Return cached AI liveness, refreshing at most once per `ttl` seconds.
+    Shape: {ok: bool, category: str|None, last_checked: iso|None}."""
+    fresh = (_live_cache["_ts"] > 0) and ((_time.time() - _live_cache["_ts"]) < ttl)
+    if force or not fresh:
+        res = await _run_probe()
+        _live_cache.update({"ok": res["ok"], "category": res["category"],
+                            "last_checked": _iso_now(), "_ts": _time.time()})
+    return {"ok": _live_cache["ok"], "category": _live_cache["category"],
+            "last_checked": _live_cache["last_checked"]}

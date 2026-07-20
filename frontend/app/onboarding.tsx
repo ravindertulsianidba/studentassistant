@@ -92,7 +92,7 @@ export default function Onboarding() {
       ) : (
         <ScrollView contentContainerStyle={{ paddingBottom: S.lg }} showsVerticalScrollIndicator={false}>
           <Text style={styles.setupTitle}>Recommended setup</Text>
-          <Text style={styles.setupSub}>Turn on what's useful for you. You're always in control — enable each only if you want it.</Text>
+          <Text style={styles.setupSub}>Turn on what’s useful for you. You’re always in control — enable each only if you want it.</Text>
 
           <PermCard icon="bell" title="Reminders & alerts"
             body="Get notified before classes, deadlines, and things you promised to do."

@@ -17,9 +17,21 @@ from core import (now_iso, clean, _parse_dt, normalize, token_overlap, rate_limi
     add_timeline, add_chunks, enforce_ai, maybe_reminder, conf_label, get_prefs,
     is_high_risk, route_item, find_related, commit_item, build_review, route_items,
     CurrentUser, logger, _issue_session, _upsert_user)
-from models import (GoogleIn, DevLoginIn, RefreshIn, CaptureIn, ImportIn, NotesIn, SearchIn, TaskIn, EventIn, ReviewActionIn, ReminderIn, ReminderStatusIn, CalendarSyncIn)
+from models import (GoogleIn, DevLoginIn, RefreshIn, CaptureIn, ImportIn, NotesIn, ManualNoteIn, SearchIn, TaskIn, EventIn, ReviewActionIn, ReminderIn, ReminderStatusIn, CalendarSyncIn)
 
 router = APIRouter(prefix="/api")
+
+# ================= MANUAL NOTES (no AI, always free) =================
+
+@router.post("/notes")
+async def create_manual_note(inp: ManualNoteIn, uid: str = CurrentUser):
+    """Create a plain note WITHOUT any AI processing. Always free; never metered."""
+    note = {"id": str(uuid.uuid4()), "user_id": uid, "title": inp.title, "course": inp.course,
+            "body": inp.body or "", "study_notes": None, "manual": True, "created_at": now_iso()}
+    await db.notes.insert_one(dict(note))
+    await add_chunks(uid, "note", note["id"], inp.title, inp.course, inp.body or "")
+    await add_timeline(uid, "note", inp.title, "Note", inp.course, note["id"], node="user_action")
+    return clean(note)
 
 # ================= TASKS =================
 

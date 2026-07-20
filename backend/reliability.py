@@ -127,19 +127,28 @@ async def set_reminder_status(db, uid, rid, status, *, external_id=None, snooze_
     return r
 
 
-def routine_specs(prefs: dict) -> list:
-    """Repeating device-scheduled routines derived from user prefs."""
-    return [
+def routine_specs(prefs: dict, evening_review_eligible: bool = True) -> list:
+    """Repeating device-scheduled routines derived from user prefs.
+
+    `evening_review_eligible` gates the Evening Review: when the account has
+    nothing to review today it is omitted, so empty accounts get no Evening
+    Review notification (the single scheduling authority is the device, which
+    consumes this list)."""
+    specs = [
         {"key": "daily_briefing", "title": "Your daily briefing",
          "body": "Here's what's on your plate today.", "time": prefs.get("morning_time", "07:30"),
          "repeat": "daily"},
-        {"key": "evening_review", "title": "Evening review",
-         "body": "Wrap up today — what got done?", "time": prefs.get("evening_time", "20:00"),
-         "repeat": "daily"},
+    ]
+    if evening_review_eligible:
+        specs.append(
+            {"key": "evening_review", "title": "Evening review",
+             "body": "Wrap up today — what got done?", "time": prefs.get("evening_time", "20:00"),
+             "repeat": "daily"})
+    specs.append(
         {"key": "weekly_review", "title": "Weekly review",
          "body": "Plan the week ahead.", "time": prefs.get("weekly_time", "18:00"),
-         "weekday": prefs.get("weekly_day", "Sun"), "repeat": "weekly"},
-    ]
+         "weekday": prefs.get("weekly_day", "Sun"), "repeat": "weekly"})
+    return specs
 
 
 # ---------------- idempotency ----------------
@@ -178,6 +187,15 @@ async def enforce_ai_cap(db, uid, prefs):
         raise HTTPException(status_code=429, detail=(
             f"Daily AI limit reached ({limit} requests). This protects your API costs. "
             f"It resets at midnight UTC. An administrator can raise the default limit."))
+
+
+async def refund_ai_cap(db, uid):
+    """Reverse a daily-cap increment when the AI operation failed BEFORE producing
+    a result, so technical failures never permanently consume the user's quota."""
+    day = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    doc = await db.ai_usage.find_one({"user_id": uid, "date": day}, {"_id": 0})
+    if doc and (doc.get("count", 0) > 0):
+        await db.ai_usage.update_one({"user_id": uid, "date": day}, {"$inc": {"count": -1}})
 
 
 async def ai_usage_status(db, uid, prefs):

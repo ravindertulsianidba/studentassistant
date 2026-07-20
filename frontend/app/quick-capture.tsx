@@ -28,7 +28,14 @@ export default function Capture() {
   const [recording, setRecording] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
   const [err, setErr] = useState("");
+  const [aiFailed, setAiFailed] = useState(false);
+  const [lastImage, setLastImage] = useState<string | null>(null);
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
+
+  const goManual = (extra: Record<string, string> = {}) => {
+    router.back();
+    router.push({ pathname: "/manual-entry", params: { text: text.trim(), ...extra } } as any);
+  };
 
   const toggleMic = async () => {
     setErr("");
@@ -75,7 +82,19 @@ export default function Capture() {
     if (!text.trim()) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setLoading(true);
-    try { setResult(await api.post("/capture", { text })); } catch (e) {} finally { setLoading(false); }
+    setAiFailed(false);
+    setErr("");
+    try {
+      setResult(await api.post("/capture", { text }));
+    } catch (e: any) {
+      // Never swallow: technical AI failures show a sanitized message + fallback.
+      // The user's typed text is preserved so nothing is lost.
+      if (e?.kind === "ai" || e?.aiError || (e?.status && e.status >= 500)) {
+        setAiFailed(true);
+      } else if (e?.status !== 402) {
+        setErr(e?.message || "Something went wrong. Try again or add it manually.");
+      }
+    } finally { setLoading(false); }
   };
 
   const pickDocument = async () => {
@@ -99,19 +118,39 @@ export default function Capture() {
   };
 
   const pickFile = async (fromCamera: boolean) => {
+    setErr(""); setAiFailed(false);
     const perm = fromCamera
       ? await ImagePicker.requestCameraPermissionsAsync()
       : await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!perm.granted) return;
+    if (!perm.granted) {
+      Alert.alert(fromCamera ? "Camera needed" : "Photos needed",
+        fromCamera ? "Allow camera access to scan a schedule or syllabus." : "Allow photo access to import a screenshot.",
+        [{ text: "Cancel", style: "cancel" }, { text: "Open settings", onPress: () => Linking.openSettings() }]);
+      return;
+    }
     const r = fromCamera
       ? await ImagePicker.launchCameraAsync({ base64: true, quality: 0.6 })
       : await ImagePicker.launchImageLibraryAsync({ base64: true, quality: 0.6, mediaTypes: "images" });
     if (r.canceled || !r.assets?.[0]?.base64) return;
-    setLoading(true);
+    const img = `data:image/jpeg;base64,${r.assets[0].base64}`;
+    setLastImage(img);        // keep the selected image so a failure can be retried
+    await processImage(img);
+  };
+
+  const processImage = async (img: string) => {
+    setLoading(true); setErr(""); setAiFailed(false);
     try {
-      const res = await api.post("/import", { image_base64: `data:image/jpeg;base64,${r.assets[0].base64}` });
+      const res = await api.post("/import", { image_base64: img });
       setResult({ committed: [], review: res.review, docType: res.doc_type });
-    } catch (e) {} finally { setLoading(false); }
+      setLastImage(null);
+    } catch (e: any) {
+      // Preserve the selected image; offer retry / manual / cancel. Never a paywall for tech failures.
+      if (e?.kind === "ai" || e?.aiError || (e?.status && e.status >= 500)) {
+        setAiFailed(true);
+      } else if (e?.status !== 402) {
+        setErr(e?.message || "Couldn't process the image. Try again or add details manually.");
+      }
+    } finally { setLoading(false); }
   };
 
   return (
@@ -124,7 +163,7 @@ export default function Capture() {
       <ScrollView contentContainerStyle={{ padding: S.lg, paddingBottom: 40 }} keyboardShouldPersistTaps="handled">
         {!result ? (
           <>
-            <Text style={styles.prompt}>What's on your mind? I'll organize it.</Text>
+            <Text style={styles.prompt}>What’s on your mind? I’ll organize it.</Text>
             <View style={styles.inputWrap}>
               <TextInput
                 testID="capture-input"
@@ -144,6 +183,19 @@ export default function Capture() {
             {transcribing ? <Text style={styles.hint}>Transcribing your voice…</Text> : null}
             {err && !result ? <Text style={styles.errTxt} testID="capture-mic-error">{err}</Text> : null}
 
+            {aiFailed ? (
+              <View style={styles.aiFail} testID="capture-ai-fallback">
+                <Feather name="alert-triangle" size={20} color={C.warning} />
+                <Text style={styles.aiFailTxt}>AI processing is temporarily unavailable. Try again or add the information manually.</Text>
+                <View style={styles.attachRow}>
+                  <Btn label="Try again" variant="soft" icon="refresh-cw" testID="capture-retry"
+                    onPress={() => (lastImage ? processImage(lastImage) : submit())} style={{ flex: 1 }} />
+                  <Btn label="Add manually" variant="primary" icon="edit-3" testID="capture-addmanual"
+                    onPress={() => goManual()} style={{ flex: 1 }} />
+                </View>
+              </View>
+            ) : null}
+
             <Text style={styles.tryLabel}>Try</Text>
             {SUGGESTIONS.map((s) => (
               <Pressable key={s} style={styles.sugg} onPress={() => setText(s)}>
@@ -152,7 +204,10 @@ export default function Capture() {
               </Pressable>
             ))}
 
-            {loading ? <Loading label="Analyzing intent…" /> : <Btn label="Capture" icon="zap" onPress={submit} testID="capture-submit" style={{ marginTop: S.lg }} />}
+            {loading ? <Loading label="Analyzing intent…" /> : <Btn label="AI Capture" icon="zap" onPress={submit} testID="capture-submit" style={{ marginTop: S.lg }} />}
+            {!loading ? (
+              <Btn label="Add Manually" variant="soft" icon="edit-3" onPress={() => goManual()} testID="capture-manual" style={{ marginTop: S.sm }} />
+            ) : null}
 
             {!loading ? (
               <>
@@ -167,7 +222,7 @@ export default function Capture() {
                   <Btn label="Active Listening" variant="soft" icon="radio" onPress={() => { router.back(); router.push("/listen"); }} testID="capture-listen" style={{ flex: 1 }} />
                 </View>
                 {err ? <Text style={styles.errTxt} testID="capture-error">{err}</Text> : null}
-                <Text style={styles.hintSmall}>Add a schedule, syllabus, email, or slide — I'll figure out what it is.</Text>
+                <Text style={styles.hintSmall}>Add a schedule, syllabus, email, or slide — I’ll figure out what it is.</Text>
               </>
             ) : null}
           </>
@@ -198,7 +253,7 @@ export default function Capture() {
               </>
             ) : null}
             {!result.committed?.length && !result.review?.length ? (
-              <Text style={styles.prompt}>I couldn't detect a commitment. Try rephrasing.</Text>
+              <Text style={styles.prompt}>I couldn’t detect a commitment. Try rephrasing.</Text>
             ) : null}
             <Btn label="Capture something else" variant="soft" icon="plus" onPress={() => { setText(""); setResult(null); }} style={{ marginTop: S.lg }} />
             {result.review?.length ? <Btn label="Open AI Inbox" variant="ghost" icon="inbox" onPress={() => { router.back(); router.push("/inbox"); }} style={{ marginTop: S.sm }} /> : null}
@@ -235,4 +290,6 @@ const styles = StyleSheet.create({
   hintSmall: { fontFamily: F.body, fontSize: 12, color: C.onSurface3, marginTop: S.sm, textAlign: "center" },
   docType: { fontFamily: F.bodyBold, fontSize: 14, color: C.brand, textAlign: "center", marginBottom: S.sm, textTransform: "capitalize" },
   errTxt: { fontFamily: F.bodyMed, fontSize: 12, color: C.error, textAlign: "center", marginTop: S.sm },
+  aiFail: { backgroundColor: C.surface2, borderRadius: R.lg, borderWidth: 1, borderColor: C.border, padding: S.md, marginTop: S.md, gap: S.sm, alignItems: "center" },
+  aiFailTxt: { fontFamily: F.bodyMed, fontSize: 14, color: C.onSurface, textAlign: "center", lineHeight: 20 },
 });

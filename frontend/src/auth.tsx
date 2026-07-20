@@ -101,6 +101,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signOut = async () => {
     const r = await storage.secureGet<string>(REFRESH, "");
     try { if (r) await api.post("/auth/logout", { refresh_token: r }); } catch {}
+    // Cancel this device's routine + reminder notifications so the previous
+    // account never receives notifications intended for it.
+    try {
+      const notif = await import("@/src/services/notifications");
+      await notif.cancelAllRoutinesAndReminders();
+    } catch {}
     clearAuthTokens();
     await storage.secureRemove(ACCESS);
     await storage.secureRemove(REFRESH);
