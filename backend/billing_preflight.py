@@ -49,11 +49,14 @@ def check() -> dict:
         missing_credentials.append(
             "GOOGLE_PLAY_TOKEN_ENCRYPTION_KEY (server secret to encrypt purchase tokens at rest)")
 
-    if config.PUBSUB_SERVICE_ACCOUNT_EMAIL or config.PUBSUB_VERIFICATION_TOKEN:
-        code_ready.append("RTDN push authentication configured")
+    if config.PUBSUB_VERIFICATION_TOKEN:
+        code_ready.append("RTDN shared-token authentication configured")
+    elif config.PUBSUB_SERVICE_ACCOUNT_EMAIL and config.PUBSUB_AUDIENCE:
+        code_ready.append("RTDN OIDC email and audience authentication configured")
     else:
         missing_credentials.append(
-            "PUBSUB_SERVICE_ACCOUNT_EMAIL or PUBSUB_VERIFICATION_TOKEN (authenticate RTDN push)")
+            "PUBSUB_SERVICE_ACCOUNT_EMAIL + PUBSUB_AUDIENCE, or "
+            "PUBSUB_VERIFICATION_TOKEN (authenticate RTDN push)")
 
     # ---- Play Console configuration reminders (cannot be verified from code) ----
     missing_play_console += [

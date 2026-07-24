@@ -120,6 +120,7 @@ GOOGLE_PLAY_TOKEN_ENCRYPTION_KEY = os.environ.get("GOOGLE_PLAY_TOKEN_ENCRYPTION_
 # Pub/Sub OIDC audience / service account email used to authenticate RTDN pushes.
 PUBSUB_VERIFICATION_TOKEN = os.environ.get("PUBSUB_VERIFICATION_TOKEN", "")
 PUBSUB_SERVICE_ACCOUNT_EMAIL = os.environ.get("PUBSUB_SERVICE_ACCOUNT_EMAIL", "")
+PUBSUB_AUDIENCE = os.environ.get("PUBSUB_AUDIENCE", "")
 # Simple admin guard for sanitized monetization reports.
 ADMIN_EMAILS = [e.strip().lower() for e in os.environ.get("ADMIN_EMAILS", "").split(",") if e.strip()]
 

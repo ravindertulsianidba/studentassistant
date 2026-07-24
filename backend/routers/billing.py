@@ -393,15 +393,29 @@ def _rtdn_kind(data: dict) -> str:
 
 
 async def _verify_pubsub_oidc(jwt_token: str) -> bool:
-    """Verify a Google-signed OIDC token from Pub/Sub. Falls back to False on any error."""
+    """Verify the Google signature, audience, and expected Pub/Sub push identity."""
+    expected_email = config.PUBSUB_SERVICE_ACCOUNT_EMAIL.strip()
+    expected_audience = config.PUBSUB_AUDIENCE.strip()
+
+    # Fail closed unless both OIDC identity controls are configured.
+    if not expected_email or not expected_audience:
+        return False
+
     try:
         from google.oauth2 import id_token as gidt
         from google.auth.transport import requests as greq
-        info = gidt.verify_oauth2_token(jwt_token, greq.Request())
-        email = info.get("email", "")
-        if config.PUBSUB_SERVICE_ACCOUNT_EMAIL:
-            return email == config.PUBSUB_SERVICE_ACCOUNT_EMAIL and info.get("email_verified", False)
-        return bool(info.get("email_verified"))
+
+        info = gidt.verify_oauth2_token(
+            jwt_token,
+            greq.Request(),
+            audience=expected_audience,
+        )
+
+        return (
+            info.get("email", "") == expected_email
+            and bool(info.get("email_verified"))
+            and info.get("aud") == expected_audience
+        )
     except Exception:
         return False
 
