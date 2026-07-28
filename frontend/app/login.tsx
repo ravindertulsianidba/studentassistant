@@ -168,7 +168,7 @@ export default function Login() {
           <LinearGradient colors={["rgba(24,28,26,0.3)", "rgba(24,28,26,0.95)"]} style={StyleSheet.absoluteFill} />
           <View style={[styles.heroContent, { paddingTop: insets.top + S.lg }]}>
             <Image source={require("@/assets/images/icon.png")} style={styles.logo} contentFit="cover" />
-            <Text style={styles.title}>Student Assistant</Text>
+            <Text style={styles.title}>GotU</Text>
             <Text style={styles.tagline}>Capture it once — never forget it again.</Text>
           </View>
         </View>

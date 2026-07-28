@@ -109,7 +109,7 @@ export default function CalendarConnect() {
                   </Pressable>
                 ))}
               </View>
-              <Text style={styles.hint}>{access === "read_write" ? "Approved events are added to your calendar; external events are read for awareness." : "External events are read for schedule awareness. Student Assistant won't write to your calendar."}</Text>
+              <Text style={styles.hint}>{access === "read_write" ? "Approved events are added to your calendar; external events are read for awareness." : "External events are read for schedule awareness. GotU won't write to your calendar."}</Text>
             </View>
 
             <View style={{ marginTop: S.xl }}>

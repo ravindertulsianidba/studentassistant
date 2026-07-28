@@ -181,7 +181,7 @@ export async function sendTestNotification(): Promise<{ ok: boolean; reason?: st
   const perm = await ensurePermission();
   if (!perm.granted) return { ok: false, reason: "Notification permission not granted." };
   await Notifications.scheduleNotificationAsync({
-    content: { title: "Student Assistant", body: "Test notification — reminders are working." },
+    content: { title: "GotU", body: "Test notification — reminders are working." },
     trigger: { seconds: 2 } as any,
   });
   return { ok: true };

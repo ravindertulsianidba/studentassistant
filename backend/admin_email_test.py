@@ -26,9 +26,9 @@ async def _run(to: str):
     try:
         await mailer.send_tracked(
             "diagnostic", to,
-            "Student Assistant — delivery test",
-            "This is a harmless delivery test from Student Assistant. No action needed.",
-            "<p>This is a harmless delivery test from Student Assistant. No action needed.</p>",
+            "GotU — delivery test",
+            "This is a harmless delivery test from GotU. No action needed.",
+            "<p>This is a harmless delivery test from GotU. No action needed.</p>",
         )
         print("result=accepted  detail=SMTP accepted the message for the recipient.")
     except Exception as e:

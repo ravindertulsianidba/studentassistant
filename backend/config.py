@@ -51,7 +51,7 @@ SMTP_PORT = int(_raw_port) if _raw_port.strip().isdigit() else 587
 SMTP_USERNAME = os.environ.get("SMTP_USERNAME", "")
 SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD", "")
 SMTP_FROM_EMAIL = os.environ.get("SMTP_FROM_EMAIL", "")
-SMTP_FROM_NAME = os.environ.get("SMTP_FROM_NAME", "Student Assistant")
+SMTP_FROM_NAME = os.environ.get("SMTP_FROM_NAME", "GotU")
 SMTP_USE_TLS = os.environ.get("SMTP_USE_TLS", "true").lower() == "true"
 
 # --- App environment ---

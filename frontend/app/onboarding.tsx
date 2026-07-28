@@ -11,7 +11,7 @@ import { ensurePermission as calPerm } from "@/src/services/calendar";
 type PermState = "idle" | "granted" | "denied" | "blocked" | "unavailable";
 
 const SLIDES = [
-  { icon: "zap", title: "Capture anything, instantly", body: "Type, speak, or snap a photo of a syllabus, email, or whiteboard. Student Assistant turns it into tasks, classes, and deadlines — automatically." },
+  { icon: "zap", title: "Capture anything, instantly", body: "Type, speak, or snap a photo of a syllabus, email, or whiteboard. GotU turns it into tasks, classes, and deadlines automatically. We’re in this together." },
   { icon: "layers", title: "It remembers so you don't", body: "Everything you capture is organized by course and searchable forever. No more digging through screenshots and group chats." },
   { icon: "bell", title: "Never miss what matters", body: "Get a gentle nudge before every class, deadline, and commitment — and a daily brief of what needs your attention." },
 ];

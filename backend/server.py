@@ -1,4 +1,4 @@
-"""Student Assistant API — app assembly.
+"""GotU API — app assembly.
 
 Business logic lives in `core.py`; request/response models in `models.py`;
 endpoints are grouped under `routers/` (auth, content, planner, reliability).
@@ -24,7 +24,7 @@ import retention
 logging.getLogger("student-assistant")
 security_redaction.install()
 
-app = FastAPI(title="Student Assistant API")
+app = FastAPI(title="GotU API")
 
 
 @app.get("/api/health")

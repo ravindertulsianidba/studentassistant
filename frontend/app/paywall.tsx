@@ -105,7 +105,7 @@ export default function Paywall() {
           <Feather name="x" size={24} color={C.onSurface2} />
         </Pressable>
 
-        <View style={styles.badge}><Feather name="zap" size={14} color={C.brand} /><Text style={styles.badgeTxt}>Student Assistant Premium</Text></View>
+        <View style={styles.badge}><Feather name="zap" size={14} color={C.brand} /><Text style={styles.badgeTxt}>GotU Premium</Text></View>
         <Text style={styles.headline}>{HEADLINE}</Text>
         <Text style={styles.value}>{VALUE}</Text>
 

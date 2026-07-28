@@ -73,7 +73,7 @@ export default function Profile() {
   const wipe = () => {
     const isPremium = plan?.plan === "premium";
     const subWarning = isPremium
-      ? "\n\nImportant: deleting your Student Assistant account does NOT cancel your Google Play subscription. Cancel it separately in Google Play to stop future charges."
+      ? "\n\nImportant: deleting your GotU account does NOT cancel your Google Play subscription. Cancel it separately in Google Play to stop future charges."
       : "";
     if ((user as any)?.auth_provider === "password") {
       if (isPremium) {
@@ -124,7 +124,7 @@ export default function Profile() {
               <View style={styles.premIcon}><Feather name="zap" size={18} color={C.brand} /></View>
               <View style={{ flex: 1 }}>
                 <View style={{ flexDirection: "row", alignItems: "center", gap: S.sm }}>
-                  <Text style={styles.premTitle}>Student Assistant Premium</Text>
+                  <Text style={styles.premTitle}>GotU Premium</Text>
                   <Badge label={plan?.plan === "premium" ? "Premium" : "Free"} tone={plan?.plan === "premium" ? "success" : "info"} />
                 </View>
                 <Text style={styles.premSub}>

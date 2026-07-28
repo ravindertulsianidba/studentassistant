@@ -95,7 +95,7 @@ export default function Diagnostics() {
     const cals = await Calendar.getCalendarsAsync(Calendar.EntityTypes.EVENT);
     const w = cals.find((c: any) => c.allowsModifications);
     if (!w) return "✕ No writable calendar available";
-    const id = await Calendar.createEventAsync(w.id, { title: "Student Assistant test", startDate: new Date(Date.now() + 36e5), endDate: new Date(Date.now() + 72e5) });
+    const id = await Calendar.createEventAsync(w.id, { title: "GotU test", startDate: new Date(Date.now() + 36e5), endDate: new Date(Date.now() + 72e5) });
     await Calendar.deleteEventAsync(id);
     return "✓ Created and deleted a test event";
   });

@@ -9,7 +9,7 @@ import * as Calendar from "expo-calendar";
 import { api } from "@/src/api";
 
 const isDevice = Platform.OS === "ios" || Platform.OS === "android";
-const CAL_TITLE = "Student Assistant";
+const CAL_TITLE = "GotU";
 const DAY_RULE: Record<string, string> = { Mon: "MO", Tue: "TU", Wed: "WE", Thu: "TH", Fri: "FR", Sat: "SA", Sun: "SU" };
 
 export async function ensurePermission(): Promise<{ granted: boolean; canAskAgain: boolean }> {

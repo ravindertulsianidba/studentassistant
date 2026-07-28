@@ -142,7 +142,7 @@ export default function Premium() {
           <Feather name="x" size={24} color={C.onSurface2} />
         </Pressable>
 
-        <View style={styles.badge}><Feather name="zap" size={14} color={C.brand} /><Text style={styles.badgeTxt}>Student Assistant Premium</Text></View>
+        <View style={styles.badge}><Feather name="zap" size={14} color={C.brand} /><Text style={styles.badgeTxt}>GotU Premium</Text></View>
 
         {/* Current subscription state */}
         <Card testID="premium-state" style={{ gap: S.xs, marginTop: S.sm }}>
@@ -245,7 +245,7 @@ export default function Premium() {
 }
 
 function unsupportedMessage() {
-  if (Platform.OS === "web") return "Subscriptions are purchased and managed in the Student Assistant Android app. Your Free plan works everywhere.";
+  if (Platform.OS === "web") return "Subscriptions are purchased and managed in the GotU Android app. Your Free plan works everywhere.";
   return "Subscriptions are available in the installed Android app from Google Play. Your Free plan works here.";
 }
 

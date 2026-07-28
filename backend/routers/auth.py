@@ -99,11 +99,11 @@ async def _send_verification(email: str, name: str | None):
     raw = await _make_email_token(email, "verify_email", config.VERIFICATION_TOKEN_HOURS)
     link = f"{config.APP_WEB_URL}/verify-email?token={raw}"
     await send_tracked(
-        "verification", email, "Verify your email — Student Assistant",
-        f"Welcome to Student Assistant!\n\nPlease verify your email address to activate your "
+        "verification", email, "Verify your email — GotU",
+        f"Welcome to GotU!\n\nPlease verify your email address to activate your "
         f"account. This link expires in {config.VERIFICATION_TOKEN_HOURS} hours:\n\n{link}\n\n"
         f"If you didn't create an account, you can ignore this email.",
-        f'<p>Welcome to Student Assistant!</p><p>Please verify your email to activate your account. '
+        f'<p>Welcome to GotU!</p><p>Please verify your email to activate your account. '
         f'This link expires in {config.VERIFICATION_TOKEN_HOURS} hours.</p>'
         f'<p><a href="{link}">Verify my email</a></p>')
 
@@ -229,7 +229,7 @@ async def forgot_password(body: ForgotPasswordIn, request: Request):
             raw = await _make_email_token(email, "reset_password", config.RESET_TOKEN_HOURS)
             link = f"{config.APP_WEB_URL}/reset-password?token={raw}"
             await send_tracked(
-                "reset", email, "Reset your password — Student Assistant",
+                "reset", email, "Reset your password — GotU",
                 f"We received a request to reset your password. This link expires in "
                 f"{config.RESET_TOKEN_HOURS} hour(s):\n\n{link}\n\n"
                 f"If you didn't request this, you can safely ignore this email.",

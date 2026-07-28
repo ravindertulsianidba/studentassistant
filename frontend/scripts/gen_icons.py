@@ -1,4 +1,4 @@
-"""Generate platform-ready icon derivatives from the approved Student Assistant icon.
+"""Generate platform-ready icon derivatives from the approved GotU icon.
 
 Produces (in assets/images/):
 - icon.png            1024x1024 full-bleed dark green + feather (no white canvas/corners)

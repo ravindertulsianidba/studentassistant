@@ -1,8 +1,9 @@
 {
   "expo": {
-    "name": "Student Assistant",
+    "name": "GotU",
     "slug": "studentassistant",
     "version": "1.0.0",
+    "description": "Overwhelmed by courses, lectures, assignments and deadlines? We’ve got you!",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "studentassistant",
@@ -26,10 +27,10 @@
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#2E3F32"
+        "backgroundColor": "#14432C"
       },
       "edgeToEdgeEnabled": true,
-      "versionCode": 2,
+      "versionCode": 3,
       "package": "com.decisivlabs.studentassistant",
       "permissions": [
         "CAMERA",
@@ -55,7 +56,7 @@
           "image": "./assets/images/splash-image.png",
           "imageWidth": 200,
           "resizeMode": "contain",
-          "backgroundColor": "#2E3F32"
+          "backgroundColor": "#14432C"
         }
       ],
       [
@@ -68,7 +69,7 @@
         "expo-notifications",
         {
           "icon": "./assets/images/notification-icon.png",
-          "color": "#2E3F32"
+          "color": "#14432C"
         }
       ],
       [
