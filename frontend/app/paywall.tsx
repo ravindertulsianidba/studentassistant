@@ -10,8 +10,8 @@ import { useAuth } from "@/src/auth";
 const HEADLINE = "Stay ahead of deadlines without doing all the organizing yourself.";
 const VALUE = "Record lectures, capture commitments, organize academic information and receive personalized guidance with higher monthly AI allowances.";
 
-const PRIVACY_URL = "https://decisivlabs.com/student-assistant/privacy";
-const TERMS_URL = "https://decisivlabs.com/student-assistant/terms";
+const PRIVACY_URL = "https://studentassistant.decisivlabs.com/privacy";
+const TERMS_URL = "https://studentassistant.decisivlabs.com/terms";
 
 const PREMIUM_POINTS = [
   { icon: "mic", t: "240 audio minutes / 30-day cycle for lectures + active listening" },

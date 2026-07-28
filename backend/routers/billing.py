@@ -340,6 +340,19 @@ async def billing_rtdn(request: Request, authorization: str = Header(default="")
         # Ownership lookup uses the token HASH, never the raw token.
         owner = await db.purchase_tokens.find_one({"purchase_token_hash": _token_hash(purchase_token)})
         uid = (owner or {}).get("user_id")
+
+        # A deleted account retains only a token-ownership tombstone. Do not recreate
+        # an entitlement or retain a newly encrypted token when later RTDN events arrive.
+        if owner and owner.get("account_deleted_at"):
+            await db.rtdn_events.update_one(
+                {"message_id": message_id},
+                {"$set": {
+                    "processed": True,
+                    "ignored_reason": "account_deleted",
+                }},
+            )
+            return {"ok": True, "account_deleted": True}
+
         # A voided/refunded/charged-back purchase revokes entitlement immediately.
         if voided_notice and uid:
             await _revoke_entitlement(uid, purchase_token, source="rtdn_voided")

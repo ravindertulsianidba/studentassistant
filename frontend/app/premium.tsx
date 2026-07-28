@@ -8,8 +8,8 @@ import { Card, Btn, Badge } from "@/src/components/ui";
 import { useAuth } from "@/src/auth";
 import * as billing from "@/src/services/billing";
 
-const PRIVACY_URL = "https://decisivlabs.com/student-assistant/privacy";
-const TERMS_URL = "https://decisivlabs.com/student-assistant/terms";
+const PRIVACY_URL = "https://studentassistant.decisivlabs.com/privacy";
+const TERMS_URL = "https://studentassistant.decisivlabs.com/terms";
 
 const HEADLINE = "Stay ahead of deadlines without doing all the organizing yourself.";
 const VALUE = "Higher monthly AI allowances for recording lectures, capturing commitments, organizing academic information and personalized guidance.";

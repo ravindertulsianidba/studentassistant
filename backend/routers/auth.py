@@ -364,11 +364,37 @@ async def delete_account(body: DeleteAccountIn | None = None, uid: str = Current
         pw = (body.password if body else None) or ""
         if not pw or not security.verify_password(pw, u["password_hash"]):
             raise HTTPException(status_code=403, detail="Please confirm your password to delete your account.")
-    for c in ["tasks", "events", "timeline", "review", "imports", "notes", "chunks",
-              "audit", "prefs", "source_docs", "transcripts", "refresh_tokens",
-              "commitments", "ledger", "reminders", "idempotency", "ai_usage", "uploads",
-              "calendar_connection", "calendar_links", "external_events",
-              "listen_sessions", "device_state"]:
+    # Preserve only a minimal, unusable billing tombstone. The token hash and deleted
+    # internal account ID prevent a Google Play purchase from being reassigned to another
+    # GotU account. The encrypted purchase token and active entitlement are removed.
+    deleted_at = now_iso()
+    await db.purchase_tokens.update_many(
+        {"user_id": uid},
+        {
+            "$set": {
+                "account_deleted_at": deleted_at,
+                "state": "account_deleted",
+                "auto_renewing": False,
+                "updated_at": deleted_at,
+            },
+            "$unset": {
+                "encrypted_purchase_token": "",
+                "linked_purchase_token_hash": "",
+            },
+        },
+    )
+
+    for c in [
+        "tasks", "events", "timeline", "review", "imports", "notes", "chunks",
+        "audit", "prefs", "source_docs", "transcripts", "refresh_tokens",
+        "commitments", "ledger", "reminders", "idempotency", "ai_usage", "uploads",
+        "calendar_connection", "calendar_links", "external_events",
+        "listen_sessions", "device_state",
+        "entitlements", "entitlement_grants", "entitlement_audit",
+        "usage_cycles", "usage_ledger", "cost_ledger",
+        "monetization_events", "purchase_events", "subscription_audit",
+    ]:
         await db[c].delete_many({"user_id": uid})
+
     await db.users.delete_one({"id": uid})
     return {"ok": True, "deleted": True}

@@ -85,7 +85,7 @@ export default function Profile() {
       } else { setAskDelPw(true); }
       return;
     }
-    Alert.alert("Delete your account?", "This permanently deletes ALL your data — recordings, transcripts, notes, tasks, events, imports and memory. This cannot be undone." + subWarning, [
+    Alert.alert("Delete your account?", "This permanently deletes your GotU account and student data, including recordings, transcripts, notes, tasks, events, imports and memory. Limited billing-security records may be retained to prevent purchase fraud and token reuse. This cannot be undone." + subWarning, [
       { text: "Cancel", style: "cancel" },
       ...(isPremium ? [{ text: "Manage subscription", onPress: openManageSubscription }] : []),
       { text: "Delete account", style: "destructive", onPress: async () => { await deleteAccount(); } },
