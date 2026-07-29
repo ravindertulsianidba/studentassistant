@@ -30,17 +30,20 @@
         "backgroundColor": "#14432C"
       },
       "edgeToEdgeEnabled": true,
-      "versionCode": 4,
+      "versionCode": 5,
       "package": "com.decisivlabs.studentassistant",
       "permissions": [
         "CAMERA",
         "RECORD_AUDIO",
-        "READ_MEDIA_IMAGES",
         "POST_NOTIFICATIONS",
         "FOREGROUND_SERVICE",
         "FOREGROUND_SERVICE_MICROPHONE",
         "READ_CALENDAR",
         "WRITE_CALENDAR"
+      ],
+      "blockedPermissions": [
+        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK",
+        "android.permission.READ_MEDIA_IMAGES"
       ]
     },
     "web": {
